@@ -16,6 +16,7 @@ from Bio.PDB import *
 
 db_home_dir = '/home/projects/cu_10020/data/precalculated_ddg'
 db_split_dir = db_home_dir + '/split'
+# prot_list_file = '/home/projects/cu_10020/data/precalculated_ddg/top1003_constraint_pdbdir.txt'
 prot_list_file = '/home/projects/cu_10020/data/precalculated_ddg/prot_list.txt'
 
 rosetta_db = '/services/tools/rosetta/2016.10/main/database'
@@ -85,7 +86,7 @@ greylist = ["HOH"]
 
 
 def QC_prot_check(prot_path):
-    res = 3  # Minimum resolution
+    res = 10  # Minimum resolution
     resolution = 0
     xray = 0
     canonical = 1
@@ -344,6 +345,7 @@ echo ---------------------------------------------------------------------------
 
     cmd = 'qsub {}'.format(qsub_path)
     os.system(cmd)
+    time.sleep(1)
 
 
 def make_split_key(prot_path):
@@ -430,6 +432,7 @@ if __name__ == "__main__":
     for idx, folder in enumerate(folder_list):
         cst_filelist_path = folder + '/' + cst_filelist_name
         cst_cmd = rosetta_min_cst_app + ' ' + const_flags_min_cst + ' -database ' + rosetta_db + ' -l ' + cst_filelist_path
+        print('Submitting for:', cst_filelist_path)
         pbs_submit_cmd(np, cst_cmd, folder, idx)
 
 
