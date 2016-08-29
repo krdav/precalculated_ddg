@@ -10,29 +10,103 @@ import math
 import contextlib
 import multiprocessing
 import argparse
+import glob
 
 sys.path.insert(0, '/home/projects/cu_10020/apps/python3-site-packages/lib/python/')
 from Bio.PDB import *
 
-db_home_dir = '/home/projects/cu_10020/data/precalculated_ddg'
-db_split_dir = db_home_dir + '/split'
-# prot_list_file = '/home/projects/cu_10020/data/precalculated_ddg/top1003_constraint_pdbdir.txt'
-prot_list_file = '/home/projects/cu_10020/data/precalculated_ddg/prot_list.txt'
 
-rosetta_db = '/services/tools/rosetta/2016.10/main/database'
-rosetta_min_cst_app = '/services/tools/rosetta/2016.10/main/source/bin/minimize_with_cst.default.linuxgccrelease'
+# Build commandline parser
+parser = argparse.ArgumentParser(description="Run the carbon alpha constraint minimization in Rosetta.")
 
-const_flags_min_cst = '-in:file:fullatom -ignore_unrecognized_res -fa_max_dis 9.0 -ddg::harmonic_ca_tether 0.5 -ddg::constraint_weight 1.0 -ddg::out_pdb_prefix min_cst_0.5 -ddg::sc_min_only false'
-# -l file_list.txt
+# Arguments
+parser.add_argument(
+    "-db_home_dir",
+    "--db_home_dir",
+    type=str,
+    dest="db_home_dir",
+    metavar="PATH",
+    help="Absolute path to the run directory. Current directory by default.",
+    required=False)
+parser.add_argument(
+    "-db_split_dir",
+    "--db_split_dir",
+    type=str,
+    dest="db_split_dir",
+    metavar="PATH",
+    help="Absolute path to the split directory containing all the two character folders, pdb style. By default the directory \"split\" in db_home_dir.",
+    required=False)
+parser.add_argument(
+    "-prot_list_file",
+    "--prot_list_file",
+    type=str,
+    dest="prot_list_file",
+    metavar="FILE",
+    help="File with a list of paths for input to the database.",
+    required=True)
+parser.add_argument(
+    "-rosetta_db",
+    "--rosetta_db",
+    type=str,
+    dest="rosetta_db",
+    metavar="PATH",
+    help="Absolute path to the Rosetta database.",
+    required=False)
+parser.add_argument(
+    "-rosetta_min_cst_app",
+    "--rosetta_min_cst_app",
+    type=str,
+    dest="rosetta_min_cst_app",
+    metavar="PATH",
+    help="Absolute path to the Rosetta cst_min application.",
+    required=False)
+parser.add_argument(
+    "-v",
+    "--verbose",
+    type=int,
+    dest="verbose",
+    metavar="VERBOSE",
+    help="Should the script be verbose?",
+    required=False)
+parser.add_argument(
+    "-ve",
+    "--verbose_error",
+    type=int,
+    dest="verbose_error",
+    metavar="VERBOSE",
+    help="Should the script be verbose on error only? On by default.",
+    required=False)
+
+# Set default arguments
+parser.set_defaults(
+    rosetta_db='/services/tools/rosetta/2016.10/main/database',
+    rosetta_min_cst_app='/services/tools/rosetta/2016.10/main/source/bin/minimize_with_cst.default.linuxgccrelease',
+    verbose_error=1)
+
+# Put arguments into args object:
+args = parser.parse_args()
+
+# Determine what to do with the input arguments:
+if not args.db_home_dir:
+    args.db_home_dir = os.getcwd()
+else:
+    args.db_home_dir = args.db_home_dir.rstrip('/')
+    os.chdir(args.db_home_dir)
+
+if not args.db_split_dir:
+    args.db_split_dir = args.db_home_dir + '/split'
+else:
+    args.db_split_dir = args.db_split_dir.rstrip('/')
 
 run_dir = os.getcwd()
 
-os.chdir(db_home_dir)
-
-
+if args.prot_list_file[0] != '/':
+    args.prot_list_file = run_dir + '/' + args.prot_list_file
 
 
 # Global variables:
+const_flags_min_cst = '-in:file:fullatom -ignore_unrecognized_res -fa_max_dis 9.0 -ddg::harmonic_ca_tether 0.5 -ddg::constraint_weight 1.0 -ddg::out_pdb_prefix min_cst_0.5 -ddg::sc_min_only false'
+
 residue_type_3to1_map = {
     "ALA": "A",
     "CYS": "C",
@@ -68,17 +142,14 @@ D_isomer_AA = ["DAL", "DCY", "DAP", "DGU", "DPH",
 
 # Don't try to add other ptm's like acetylation etc.
 # It is not worth it.
-ptm_residues = ["SEP", "TPO", "PTR"]
-
-
 whitelist = ['MSE']
-
+ptm_residues = ["SEP", "TPO", "PTR"]
 whitelist.extend(D_isomer_AA)
 whitelist.extend(ptm_residues)
 
 
 # Currently nothing in blacklist
-# The badly modified residues are normally just cut out of the crystal
+# The badly modified residues are normally just cut out of the crystal by only allowing residues from the whitelist:
 blacklist = []
 
 # Remove from crystal structure:
@@ -86,7 +157,7 @@ greylist = ["HOH"]
 
 
 def QC_prot_check(prot_path):
-    res = 10  # Minimum resolution
+    min_res = 10  # Minimum resolution
     resolution = 0
     xray = 0
     canonical = 1
@@ -104,7 +175,7 @@ def QC_prot_check(prot_path):
                 res_str = line[22:29]
                 try:
                     res_float = float(res_str)
-                    if res_float < res:
+                    if res_float < min_res:
                         resolution = 1
                 except:
                     pass
@@ -127,7 +198,8 @@ class ReadWriteProtein:
                 line = str(line, 'utf-8')
                 line = line.rstrip('\n')
                 # Find residues and ligands:
-                if (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] not in greylist:
+                # if (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] not in greylist:
+                if (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] in whitelist:  # Require residues to be known by Rosetta
                     chain_name = line[21]
                     if chain_name not in chain_lines:
                         chain_lines[chain_name] = list()
@@ -388,21 +460,107 @@ def write_update_folder(db_home_dir, update_sack):
         print('\n'.join(update_sack), file=fh_out)
 
 
+def cst_min_success(prot_path, db_split_dir):
+    split_key = make_split_key(prot_path)
+    prot_name = make_prot_name(prot_path)
+    new_prot_folder = db_split_dir + '/' + split_key + '/' + prot_name
+    # If the folder does not exist return code 1:
+    if not os.path.exists(new_prot_folder):
+        return(1)
+    else:
+        pass
+
+    out_log_glob_string = new_prot_folder + '/' + 'sub*_log.out'
+    out_log_glob = glob.glob(out_log_glob_string)
+    err_log_glob_string = new_prot_folder + '/' + 'sub*_log.err'
+    err_log_glob = glob.glob(err_log_glob_string)
+    if len(out_log_glob) > 1 and len(err_log_glob) > 1:  # Code 2: Unforseen error
+        if args.verbose or args.verbose_error:
+            print('This is weird... There are more than one ddG submission STDOUT log. Maybe clean folder first? Folder:\n', new_prot_folder)
+        return(2)
+    elif len(out_log_glob) == 0 and len(err_log_glob) == 0:  # Code 3: The job is still running
+        if args.verbose:
+            print('No log found, job must be in progress:\n', new_prot_folder)
+        # Job in progress log not yet created:
+        return(3)
+    else:  # Check if the logs indicate success
+        out_log = out_log_glob[0]
+        err_log = err_log_glob[0]
+
+    with open(err_log) as fh:
+        lines = fh.readlines()
+    if not lines:  # If the error log is empty
+        pass
+    elif lines[-1].startswith('=>> PBS: job killed'):  # Code 4: The job was killed for exceed run time limits
+        if args.verbose or args.verbose_error:
+            print('Job was killed by the queueing system because of too much run time:\n', err_log)
+        return(4)
+    elif 'Aborted' in lines[-1]:  # Code 2: Unforseen error
+        if args.verbose or args.verbose_error:
+            print('Rosetta have thrown an error an aborted:\n', new_prot_folder)
+        return(2)
+
+    with open(out_log) as fh:
+        lines = fh.readlines()
+        # Apparently the cst:min app ends with this on success:
+    if lines[-1].startswith('running another iteration of minimization'):  # Code 5: The job ended with success
+        if args.verbose:
+            print('Job has succesfully ended:\n', new_prot_folder)
+        return(5)
+    else:  # Code 2: Unforseen error
+        if args.verbose or args.verbose_error:
+            print('The submission log indicates that the run did not end succesfully:\n', out_log)
+        # shutil.rmtree(folder)
+        return(2)
+
+
+# Code 1: No folder, or never started
+### Response: Proceed as normal (True)
+# Code 2: Unforseen error
+### Response: Report a problem, and don't try to run it (False)
+# Code 3: The job is still running
+### Response: Let it run until it finishes (False)
+# Code 4: The job was killed for exceed run time limits
+### Response: Do nothing but inform the user (False)
+# Code 5: The job ended with success
+### Response: Nothing (False)
+def min_cst_choice(response):
+    if response == 1:
+        return(True)
+    elif response == 2:
+        return(False)
+    elif response == 3:
+        return(False)
+    elif response == 4:
+        return(False)
+    elif response == 5:
+        return(False)
+    else:
+        if args.verbose or args.verbose_error:
+            print('Unforseen error. ddg_success could not be determined.')
+        return(False)
+
+
 if __name__ == "__main__":
-    with open(prot_list_file) as fh:
+    with open(args.prot_list_file) as fh:
         prot_list = fh.read().splitlines()
     prot_list = clean_list(prot_list)
     update_sack = list()
     # os.chdir(db_split_dir)
     for prot_path in prot_list:
-        if entry_exists(prot_path, db_split_dir):
-            continue
         # Skip bad proteins:
         if not QC_prot_check(prot_path):
             print('Following protein did not meet the QC requiemnents:\n{}'.format(prot_path))
             continue
+
+        # Skip runs that are already running or failing for some reason:
+        cst_min_response = cst_min_success(prot_path, args.db_split_dir)
+        cst_process = min_cst_choice(cst_min_response)
+        if not cst_process:
+            continue
+
         # Read protein into an object:
-        RWprotein_obj = ReadWriteProtein(prot_path, db_split_dir)
+        RWprotein_obj = ReadWriteProtein(prot_path, args.db_split_dir)
 
         split_key = RWprotein_obj.split_key
         prot_name = RWprotein_obj.prot_name
@@ -420,9 +578,9 @@ if __name__ == "__main__":
         # Put the folder in the sack for cst_min and ddG calculations:
         update_sack.append(new_prot_folder)
     # Then write the folder of the files that needs updating:
-    write_update_folder(db_home_dir, update_sack)
+    write_update_folder(args.db_home_dir, update_sack)
 
-    folders_for_update = db_home_dir + '/' + 'folders_for_update.txt'
+    folders_for_update = args.db_home_dir + '/' + 'folders_for_update.txt'
     cst_filelist_name = 'filenames_for_cst_min.txt'
     np = 1
 
@@ -431,7 +589,7 @@ if __name__ == "__main__":
 
     for idx, folder in enumerate(folder_list):
         cst_filelist_path = folder + '/' + cst_filelist_name
-        cst_cmd = rosetta_min_cst_app + ' ' + const_flags_min_cst + ' -database ' + rosetta_db + ' -l ' + cst_filelist_path
+        cst_cmd = args.rosetta_min_cst_app + ' ' + const_flags_min_cst + ' -database ' + args.rosetta_db + ' -l ' + cst_filelist_path
         print('Submitting for:', cst_filelist_path)
         pbs_submit_cmd(np, cst_cmd, folder, idx)
 

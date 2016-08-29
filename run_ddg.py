@@ -201,7 +201,6 @@ def ddg_success(ddg_file):
 
         with open(err_log) as fh:
             lines = fh.readlines()
-            # Apparently the ddg:monomer app ends with this on success:
         if not lines:  # If the error log is empty
             pass
         elif lines[-1].startswith('=>> PBS: job killed'):  # Code 4: The job was killed for exceed run time limits
