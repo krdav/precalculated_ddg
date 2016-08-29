@@ -10,7 +10,7 @@ def delete_traj(split):
         chain_glob = prot + '/' + '*/'
         chains = glob.glob(chain_glob)
         for chain in chains:
-            traj_glob = chain + '/' + '*/'
+            traj_glob = chain + '/' + 'mutant_traj*'
             trajs = glob.glob(traj_glob)
             for traj in trajs:
                 print(traj)
