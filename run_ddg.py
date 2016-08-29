@@ -324,6 +324,9 @@ def cst_min_success(folder):
 
 folders_for_update = db_home_dir + '/' + 'folders_for_update.txt'
 #folders_for_update = db_home_dir + '/' + 'folders_for_update2.txt'
+# Or do glob to find all the folders:
+# glob.glob("/home/projects/cu_10020/data/precalculated_ddg/split/*/*/")
+
 
 np = 1
 verbose = 0
