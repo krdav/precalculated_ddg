@@ -159,7 +159,8 @@ D_isomer_AA = ["DAL", "DCY", "DAP", "DGU", "DPH",
 
 # Don't try to add other ptm's like acetylation etc.
 # It is not worth it.
-whitelist = ['MSE']
+whitelist = list(residue_type_3to1_map.keys())
+whitelist.append('MSE')
 ptm_residues = ["SEP", "TPO", "PTR"]
 whitelist.extend(D_isomer_AA)
 whitelist.extend(ptm_residues)
@@ -612,6 +613,8 @@ if __name__ == "__main__":
         folder_list = fh.read().splitlines()
 
     for idx, folder in enumerate(folder_list):
+        if folder == '':
+            continue
         cst_filelist_path = folder + '/' + cst_filelist_name
         cst_cmd = args.rosetta_min_cst_app + ' ' + const_flags_min_cst + ' -database ' + args.rosetta_db + ' -l ' + cst_filelist_path
         print('Submitting for:', cst_filelist_path)
