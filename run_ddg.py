@@ -104,8 +104,6 @@ parser.set_defaults(
 # Put arguments into args object:
 args = parser.parse_args()
 
-if not (args.folders_for_ddg or args.check_all_folders):
-    parser.error('No action requested, add --folders_for_ddg or --check_all_folders')
 
 # Determine what to do with the input arguments:
 if not args.db_home_dir:
@@ -120,8 +118,15 @@ else:
     args.db_split_dir = args.db_split_dir.rstrip('/')
 
 run_dir = os.getcwd()
-if args.prot_list_file[0] != '/':
-    args.prot_list_file = run_dir + '/' + args.prot_list_file
+if args.folders_for_ddg and not args.check_all_folders:
+    pass
+elif not args.folders_for_ddg and args.check_all_folders:
+    args.folders_for_ddg = run_dir + '/folders_for_ddg.txt'
+else:
+    parser.error('No action requested, add --folders_for_ddg or --check_all_folders')
+
+if args.folders_for_ddg[0] != '/':
+    args.folders_for_ddg = run_dir + '/' + args.folders_for_ddg
 
 
 # Global variables:
