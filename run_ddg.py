@@ -258,11 +258,11 @@ def ddg_success(ddg_file):
     # If either the ddg_rundir or the ddg_predictions.out file is missing,
     # there cannot have been a successful ddg run:
     if not os.path.exists(folder):  # Code 1: No folder, or never started and the minimized structure is there
-        if verbose:
+        if args.verbose:
             print('The ddg folder could not be found. Proceeding to submit this as a job. Folder:\n', folder)
         return(1)
     elif not os.path.exists(ddg_outfile):  # Code 1: No folder, or never started
-        if verbose:
+        if args.verbose:
             print('The ddg_predictions.out file could not be found. Proceeding to submit this as a job. Folder:\n', folder)
         shutil.rmtree(folder)
         return(1)
@@ -272,12 +272,12 @@ def ddg_success(ddg_file):
         err_log_glob_string = folder + '/' + 'sub*_log.err'
         err_log_glob = glob.glob(err_log_glob_string)
         if len(out_log_glob) > 1 and len(err_log_glob) > 1:  # Code 2: Unforseen error
-            if verbose:
+            if args.verbose:
                 print('This is weird... There are more than one ddG submission STDOUT log. Maybe clean folder first? Folder:\n', folder)
             # shutil.rmtree(folder)
             return(2)
         elif len(out_log_glob) == 0 and len(err_log_glob) == 0:  # Code 3: The job is still running
-            if verbose:
+            if args.verbose:
                 print('No log found, job must be in progress:\n', folder)
             # Job in progress log not yet created:
             return(3)
@@ -290,11 +290,11 @@ def ddg_success(ddg_file):
         if not lines:  # If the error log is empty
             pass
         elif lines[-1].startswith('=>> PBS: job killed'):  # Code 4: The job was killed for exceed run time limits
-            if verbose:
+            if args.verbose:
                 print('Job was killed by the queueing system because of too much run time:\n', err_log)
             return(4)
         elif 'Aborted' in lines[-1]:  # Code 2: Unforseen error
-            if verbose:
+            if args.verbose:
                 print('Rosetta have thrown an error an aborted:\n', folder)
             return(2)
 
@@ -302,11 +302,11 @@ def ddg_success(ddg_file):
             lines = fh.readlines()
             # Apparently the ddg:monomer app ends with this on success:
         if lines[-1].startswith(' Total weighted score'):  # Code 5: The job ended with success
-            if verbose:
+            if args.verbose:
                 print('Job has succesfully ended:\n', folder)
             return(5)
         else:  # Code 2: Unforseen error
-            if verbose:
+            if args.verbose:
                 print('The submission log indicates that the run did not end succesfully:\n', out_log)
             # shutil.rmtree(folder)
             return(2)
@@ -337,7 +337,7 @@ def ddg_choice(ddg_response, pdb_file_path, idx, folders_for_ddg2):
     elif ddg_response == 5:
         pass
     else:
-        if verbose:
+        if args.verbose:
             print('Unforseen error. ddg_success could not be determined.')
     return(folders_for_ddg2)
 
@@ -388,7 +388,7 @@ def cst_min_success(folder):
     out_log_glob_string = folder + '/' + 'sub*_log.out'
     out_log_glob = glob.glob(out_log_glob_string)
     if len(out_log_glob) > 1:
-        if verbose:
+        if args.verbose:
             print('This is weird... There are more than one min_cst submission STDOUT log. Maybe clean folder first? Folder:\n', folder)
         return(False)
     elif len(out_log_glob) == 0:
@@ -401,7 +401,7 @@ def cst_min_success(folder):
     if lines[-1].startswith('running another iteration of minimization'):
         return(True)
     else:
-        if verbose:
+        if args.verbose:
             print('The cst_min application did not end succesfully in folder:\n', folder)
         return(False)
 
@@ -414,7 +414,6 @@ def cst_min_success(folder):
 
 
 np = 1
-verbose = 0
 
 if not args.check_all_folders:
     with open(args.folders_for_ddg) as fh:
@@ -432,6 +431,7 @@ for idx, folder in enumerate(folder_list):
     ddg_file_glob = folder + '/' + '*.pdb'
     files_for_ddg = glob.glob(ddg_file_glob)
     for ddg_file in files_for_ddg:
+        print(ddg_file)
         ddg_response = ddg_success(ddg_file)
         folders_for_ddg2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_ddg2)
         job_idx += 1
