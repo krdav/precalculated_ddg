@@ -525,6 +525,10 @@ def cst_min_success(prot_path, db_split_dir):
         if args.verbose:
             print('Job has succesfully ended:\n', new_prot_folder)
         return(5)
+    elif 'already exists! skipping' in lines[-1]:
+        if args.verbose:
+            print('Job was submitted multiple times:\n', new_prot_folder)
+        return(6)
     else:  # Code 2: Unforseen error
         if args.verbose or args.verbose_error:
             print('The submission log indicates that the run did not end succesfully:\n', out_log)
@@ -541,6 +545,8 @@ def cst_min_success(prot_path, db_split_dir):
 # Code 4: The job was killed for exceed run time limits
 ### Response: Do nothing but inform the user (False)
 # Code 5: The job ended with success
+### Response: Nothing (False)
+# Code 6: The job was submitted multiple times resulting in overlapping output names
 ### Response: Nothing (False)
 def min_cst_choice(response, db_split_dir, prot_path):
     split_key = make_split_key(prot_path)
@@ -559,6 +565,8 @@ def min_cst_choice(response, db_split_dir, prot_path):
     elif response == 4:  # Kill because of too much time
         return(False)
     elif response == 5:  # Success
+        return(False)
+    elif response == 6:  # Probably success
         return(False)
     else:
         if args.verbose or args.verbose_error:
