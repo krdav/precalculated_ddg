@@ -84,13 +84,22 @@ parser.add_argument(
     metavar="SWITCH",
     help="Try to restart those jobs that failed. Default 0.",
     required=False)
+parser.add_argument(
+    "-skip_RW",
+    "--skip_RW",
+    type=int,
+    dest="skip_RW",
+    metavar="SWITCH",
+    help="Skip the read/write step and go directly to the \"folders_for_update.txt\" run. Default 0.",
+    required=False)
 
 # Set default arguments
 parser.set_defaults(
     rosetta_db='/services/tools/rosetta/2016.10/main/database',
     rosetta_min_cst_app='/services/tools/rosetta/2016.10/main/source/bin/minimize_with_cst.default.linuxgccrelease',
     verbose_error=1,
-    restart_failed=0)
+    restart_failed=0,
+    skip_RW=0)
 
 # Put arguments into args object:
 args = parser.parse_args()
@@ -557,48 +566,48 @@ def min_cst_choice(response, db_split_dir, prot_path):
 
 
 if __name__ == "__main__":
-    with open(args.prot_list_file) as fh:
-        prot_list = fh.read().splitlines()
-    prot_list = clean_list(prot_list)
-    update_sack = list()
-    # os.chdir(db_split_dir)
-    for prot_path in prot_list:
-        # Skip bad proteins:
-        if not QC_prot_check(prot_path):
-            print('Following protein did not meet the QC requiemnents:\n{}'.format(prot_path))
-            continue
+    if not args.skip_RW:
+        with open(args.prot_list_file) as fh:
+            prot_list = fh.read().splitlines()
+        prot_list = clean_list(prot_list)
+        update_sack = list()
+        # os.chdir(db_split_dir)
+        for prot_path in prot_list:
+            # Skip bad proteins:
+            if not QC_prot_check(prot_path):
+                print('Following protein did not meet the QC requiemnents:\n{}'.format(prot_path))
+                continue
 
-        # Skip runs that are already running or failing for some reason:
-        cst_min_response = cst_min_success(prot_path, args.db_split_dir)
-        cst_process = min_cst_choice(cst_min_response, args.db_split_dir, prot_path)
-        if not cst_process:
-            continue
+            # Skip runs that are already running or failing for some reason:
+            cst_min_response = cst_min_success(prot_path, args.db_split_dir)
+            cst_process = min_cst_choice(cst_min_response, args.db_split_dir, prot_path)
+            if not cst_process:
+                continue
 
-        # Read protein into an object:
-        RWprotein_obj = ReadWriteProtein(prot_path, args.db_split_dir)
+            # Read protein into an object:
+            RWprotein_obj = ReadWriteProtein(prot_path, args.db_split_dir)
 
-        split_key = RWprotein_obj.split_key
-        prot_name = RWprotein_obj.prot_name
-        new_prot_folder = RWprotein_obj.new_prot_folder
+            split_key = RWprotein_obj.split_key
+            prot_name = RWprotein_obj.prot_name
+            new_prot_folder = RWprotein_obj.new_prot_folder
 
-        monomer_filenanes = RWprotein_obj.write_monomers()
-        dimer_filenanes = RWprotein_obj.write_dimers()
-        all_filenames = monomer_filenanes + dimer_filenanes
-        filenames_outname = new_prot_folder + '/' + 'filenames_for_cst_min.txt'
-        with open(filenames_outname, 'w') as fh_out:
-            print('\n'.join(all_filenames), file=fh_out)
+            monomer_filenanes = RWprotein_obj.write_monomers()
+            dimer_filenanes = RWprotein_obj.write_dimers()
+            all_filenames = monomer_filenanes + dimer_filenanes
+            filenames_outname = new_prot_folder + '/' + 'filenames_for_cst_min.txt'
+            with open(filenames_outname, 'w') as fh_out:
+                print('\n'.join(all_filenames), file=fh_out)
 
-        # Write a resfile to the folder with the newly created PDB files:
-        write_resfile(new_prot_folder)
-        # Put the folder in the sack for cst_min and ddG calculations:
-        update_sack.append(new_prot_folder)
-    # Then write the folder of the files that needs updating:
-    write_update_folder(args.db_home_dir, update_sack)
+            # Write a resfile to the folder with the newly created PDB files:
+            write_resfile(new_prot_folder)
+            # Put the folder in the sack for cst_min and ddG calculations:
+            update_sack.append(new_prot_folder)
+        # Then write the folder of the files that needs updating:
+        write_update_folder(args.db_home_dir, update_sack)
 
     folders_for_update = args.db_home_dir + '/' + 'folders_for_update.txt'
     cst_filelist_name = 'filenames_for_cst_min.txt'
     np = 1
-
     with open(folders_for_update) as fh:
         folder_list = fh.read().splitlines()
 
@@ -606,7 +615,10 @@ if __name__ == "__main__":
         cst_filelist_path = folder + '/' + cst_filelist_name
         cst_cmd = args.rosetta_min_cst_app + ' ' + const_flags_min_cst + ' -database ' + args.rosetta_db + ' -l ' + cst_filelist_path
         print('Submitting for:', cst_filelist_path)
-        pbs_submit_cmd(np, cst_cmd, folder, idx)
+        try:
+            pbs_submit_cmd(np, cst_cmd, folder, idx)
+        except Exception as e:
+            print(e)
 
 
 
