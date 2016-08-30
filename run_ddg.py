@@ -51,7 +51,7 @@ parser.add_argument(
     type=str,
     dest="check_all_folders",
     metavar="SWITCH",
-    help="File with a list of paths for input folders in the database for which to make ddg calculations.",
+    help="Should all the created folders in the database be cheched for ddG calculations?",
     required=False)
 parser.add_argument(
     "-rosetta_db",
