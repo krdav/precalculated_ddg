@@ -437,6 +437,7 @@ for idx, folder in enumerate(folder_list):
         job_idx += 1
 
 # Write an updated "folders to update" list:
+folders_for_ddg2 = ['/' + '/'.join(f.split('/')[:-1]) for f in folders_for_ddg2]
 with open(args.folders_for_ddg, 'w') as fh_out:
     print('\n'.join(folders_for_ddg2), file=fh_out)
 
