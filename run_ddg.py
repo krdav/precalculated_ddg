@@ -44,7 +44,15 @@ parser.add_argument(
     dest="folders_for_ddg",
     metavar="FILE",
     help="File with a list of paths for input folders in the database for which to make ddg calculations.",
-    required=True)
+    required=False)
+parser.add_argument(
+    "-a",
+    "--check_all_folders",
+    type=str,
+    dest="check_all_folders",
+    metavar="SWITCH",
+    help="File with a list of paths for input folders in the database for which to make ddg calculations.",
+    required=False)
 parser.add_argument(
     "-rosetta_db",
     "--rosetta_db",
@@ -96,6 +104,9 @@ parser.set_defaults(
 # Put arguments into args object:
 args = parser.parse_args()
 
+if not (args.folders_for_ddg or args.check_all_folders):
+    parser.error('No action requested, add --folders_for_ddg or --check_all_folders')
+
 # Determine what to do with the input arguments:
 if not args.db_home_dir:
     args.db_home_dir = os.getcwd()
@@ -137,8 +148,7 @@ residue_type_3to1_map = {
     "THR": "T",
     "VAL": "V",
     "TRP": "W",
-    "TYR": "Y",
-    "UNK": 'X',
+    "TYR": "Y"
 }
 
 AAletters = 'ACDEFGHIKLMNPQRSTVWY'
@@ -151,22 +161,11 @@ D_isomer_AA = ["DAL", "DCY", "DAP", "DGU", "DPH",
 
 # Don't try to add other ptm's like acetylation etc.
 # It is not worth it.
+whitelist = list(residue_type_3to1_map.keys())
+whitelist.append('MSE')
 ptm_residues = ["SEP", "TPO", "PTR"]
-
-
-whitelist = ['MSE']
-
 whitelist.extend(D_isomer_AA)
 whitelist.extend(ptm_residues)
-
-
-# Currently nothing in blacklist
-# The badly modified residues are normally just cut out of the crystal
-blacklist = []
-
-# Remove from crystal structure:
-greylist = ["HOH"]
-
 
 
 def pbs_submit_cmd(np, cmd_flags, run_dir, idx):
@@ -253,7 +252,7 @@ def ddg_success(ddg_file):
     ddg_outfile = folder + '/' + 'ddg_predictions.out'
     # If either the ddg_rundir or the ddg_predictions.out file is missing,
     # there cannot have been a successful ddg run:
-    if not os.path.exists(folder):  # Code 1: No folder, or never started
+    if not os.path.exists(folder):  # Code 1: No folder, or never started and the minimized structure is there
         if verbose:
             print('The ddg folder could not be found. Proceeding to submit this as a job. Folder:\n', folder)
         return(1)
@@ -412,9 +411,13 @@ def cst_min_success(folder):
 np = 1
 verbose = 0
 
-
-with open(args.folders_for_ddg) as fh:
-    folder_list = fh.read().splitlines()
+if not args.check_all_folders:
+    with open(args.folders_for_ddg) as fh:
+        folder_list = fh.read().splitlines()
+else:
+    folder_list_glob = args.db_split_dir + '/*/*/'
+    folder_list = glob.glob(folder_list_glob)
+    folder_list = [f.rstrip('/') for f in folder_list]
 
 job_idx = 0
 folders_for_ddg2 = list()
