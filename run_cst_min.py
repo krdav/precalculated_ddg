@@ -145,8 +145,7 @@ residue_type_3to1_map = {
     "THR": "T",
     "VAL": "V",
     "TRP": "W",
-    "TYR": "Y",
-    "UNK": 'X',
+    "TYR": "Y"
 }
 
 AAletters = 'ACDEFGHIKLMNPQRSTVWY'
@@ -521,7 +520,7 @@ def cst_min_success(prot_path, db_split_dir):
     with open(out_log) as fh:
         lines = fh.readlines()
         # Apparently the cst:min app ends with this on success:
-    if lines[-1].startswith('running another iteration of minimization'):  # Code 5: The job ended with success
+    if lines[-1].startswith('running another iteration of minimization') or lines[-1].startswith('core.optimization.LineMinimizer: Inaccurate G!'):  # Code 5: The job ended with success
         if args.verbose:
             print('Job has succesfully ended:\n', new_prot_folder)
         return(5)
