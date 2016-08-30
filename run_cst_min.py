@@ -73,15 +73,24 @@ parser.add_argument(
     "--verbose_error",
     type=int,
     dest="verbose_error",
-    metavar="VERBOSE",
+    metavar="SWITCH",
     help="Should the script be verbose on error only? On by default.",
+    required=False)
+parser.add_argument(
+    "-restart_failed",
+    "--restart_failed",
+    type=int,
+    dest="restart_failed",
+    metavar="SWITCH",
+    help="Try to restart those jobs that failed. Default 0.",
     required=False)
 
 # Set default arguments
 parser.set_defaults(
     rosetta_db='/services/tools/rosetta/2016.10/main/database',
     rosetta_min_cst_app='/services/tools/rosetta/2016.10/main/source/bin/minimize_with_cst.default.linuxgccrelease',
-    verbose_error=1)
+    verbose_error=1,
+    restart_failed=0)
 
 # Put arguments into args object:
 args = parser.parse_args()
@@ -99,7 +108,6 @@ else:
     args.db_split_dir = args.db_split_dir.rstrip('/')
 
 run_dir = os.getcwd()
-
 if args.prot_list_file[0] != '/':
     args.prot_list_file = run_dir + '/' + args.prot_list_file
 
@@ -395,7 +403,7 @@ def pbs_submit_cmd(np, cmd_flags, run_dir, idx):
 #PBS -r y\n\
 ### Number of nodes\n\
 #PBS -l nodes=1:ppn=' + str(np) + ':thinnode\n\
-#PBS -l walltime=24:00:00\n\
+#PBS -l walltime=100:00:00\n\
 echo This is the STDOUT stream from a PBS Torque submission script.\n\
 # Go to the directory from where the job was submitted (initial directory is $HOME)\n\
 echo Working directory is $PBS_O_WORKDIR\n\
@@ -524,16 +532,23 @@ def cst_min_success(prot_path, db_split_dir):
 ### Response: Do nothing but inform the user (False)
 # Code 5: The job ended with success
 ### Response: Nothing (False)
-def min_cst_choice(response):
+def min_cst_choice(response, db_split_dir, prot_path):
+    split_key = make_split_key(prot_path)
+    prot_name = make_prot_name(prot_path)
+    new_prot_folder = db_split_dir + '/' + split_key + '/' + prot_name
+
     if response == 1:
         return(True)
-    elif response == 2:
+    elif response == 2 and args.restart_failed:  # Some kind of fail, try to restart
+        shutil.rmtree(new_prot_folder)
+        return(True)
+    elif response == 2 and not args.restart_failed:  # Some kind of fail
         return(False)
-    elif response == 3:
+    elif response == 3:  # Still running
         return(False)
-    elif response == 4:
+    elif response == 4:  # Kill because of too much time
         return(False)
-    elif response == 5:
+    elif response == 5:  # Success
         return(False)
     else:
         if args.verbose or args.verbose_error:
@@ -555,7 +570,7 @@ if __name__ == "__main__":
 
         # Skip runs that are already running or failing for some reason:
         cst_min_response = cst_min_success(prot_path, args.db_split_dir)
-        cst_process = min_cst_choice(cst_min_response)
+        cst_process = min_cst_choice(cst_min_response, args.db_split_dir, prot_path)
         if not cst_process:
             continue
 

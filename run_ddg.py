@@ -16,25 +16,106 @@ import argparse
 sys.path.insert(0, '/home/projects/cu_10020/apps/python3-site-packages/lib/python/')
 from Bio.PDB import *
 
-db_home_dir = '/home/projects/cu_10020/data/precalculated_ddg'
-db_split_dir = db_home_dir + '/split'
 
-rosetta_db = '/services/tools/rosetta/2016.10/main/database'
-rosetta_ddg_app = '/services/tools/rosetta/2016.10/main/source/bin/ddg_monomer.default.linuxgccrelease'
+# Build commandline parser
+parser = argparse.ArgumentParser(description="Run the ddg_monomer in Rosetta.")
 
-const_flags_ddg = '-resfile resfile.txt -ddg:weight_file soft_rep_design -ddg::iterations 1 -ddg::dump_pdbs false -ignore_unrecognized_res -ddg::local_opt_only true -ddg::suppress_checkpointing true -in::file::fullatom -ddg::mean true -ddg::min false -mute all -ddg::output_silent false'
-# -in:file:s min_cst_0.5.XXXX_0001.pdb
+# Arguments
+parser.add_argument(
+    "-db_home_dir",
+    "--db_home_dir",
+    type=str,
+    dest="db_home_dir",
+    metavar="PATH",
+    help="Absolute path to the run directory. Current directory by default.",
+    required=False)
+parser.add_argument(
+    "-db_split_dir",
+    "--db_split_dir",
+    type=str,
+    dest="db_split_dir",
+    metavar="PATH",
+    help="Absolute path to the split directory containing all the two character folders, pdb style. By default the directory \"split\" in db_home_dir.",
+    required=False)
+parser.add_argument(
+    "-folders_for_ddg",
+    "--folders_for_ddg",
+    type=str,
+    dest="folders_for_ddg",
+    metavar="FILE",
+    help="File with a list of paths for input folders in the database for which to make ddg calculations.",
+    required=True)
+parser.add_argument(
+    "-rosetta_db",
+    "--rosetta_db",
+    type=str,
+    dest="rosetta_db",
+    metavar="PATH",
+    help="Absolute path to the Rosetta database.",
+    required=False)
+parser.add_argument(
+    "-rosetta_ddg_app",
+    "--rosetta_ddg_app",
+    type=str,
+    dest="rosetta_ddg_app",
+    metavar="PATH",
+    help="Absolute path to the Rosetta dgg application.",
+    required=False)
+parser.add_argument(
+    "-v",
+    "--verbose",
+    type=int,
+    dest="verbose",
+    metavar="VERBOSE",
+    help="Should the script be verbose?",
+    required=False)
+parser.add_argument(
+    "-ve",
+    "--verbose_error",
+    type=int,
+    dest="verbose_error",
+    metavar="SWITCH",
+    help="Should the script be verbose on error only? On by default.",
+    required=False)
+parser.add_argument(
+    "-restart_failed",
+    "--restart_failed",
+    type=int,
+    dest="restart_failed",
+    metavar="SWITCH",
+    help="Try to restart those jobs that failed. Default 0.",
+    required=False)
 
+# Set default arguments
+parser.set_defaults(
+    rosetta_db='/services/tools/rosetta/2016.10/main/database',
+    rosetta_ddg_app='/services/tools/rosetta/2016.10/main/source/bin/ddg_monomer.default.linuxgccrelease',
+    verbose_error=1,
+    restart_failed=0)
 
+# Put arguments into args object:
+args = parser.parse_args()
+
+# Determine what to do with the input arguments:
+if not args.db_home_dir:
+    args.db_home_dir = os.getcwd()
+else:
+    args.db_home_dir = args.db_home_dir.rstrip('/')
+    os.chdir(args.db_home_dir)
+
+if not args.db_split_dir:
+    args.db_split_dir = args.db_home_dir + '/split'
+else:
+    args.db_split_dir = args.db_split_dir.rstrip('/')
 
 run_dir = os.getcwd()
-
-os.chdir(db_home_dir)
-
-
+if args.prot_list_file[0] != '/':
+    args.prot_list_file = run_dir + '/' + args.prot_list_file
 
 
 # Global variables:
+const_flags_ddg = '-resfile resfile.txt -ddg:weight_file soft_rep_design -ddg::iterations 1 -ddg::dump_pdbs false -ignore_unrecognized_res -ddg::local_opt_only true -ddg::suppress_checkpointing true -in::file::fullatom -ddg::mean true -ddg::min false -mute all -ddg::output_silent false'
+
 residue_type_3to1_map = {
     "ALA": "A",
     "CYS": "C",
@@ -144,7 +225,8 @@ def submit_ddg(pdb_file_path, idx):
     dst_resfile_path = ddg_rundir + '/' + 'resfile.txt'
     shutil.copy(resfile_path, dst_resfile_path)
     # Create the run command:
-    ddg_cmd = rosetta_ddg_app + ' ' + const_flags_ddg + ' -database ' + rosetta_db + ' -in:file:s ' + dst_pdb_file_path
+    ddg_cmd = args.rosetta_ddg_app + ' ' + const_flags_ddg + ' -database ' + args.rosetta_db + ' -in:file:s ' + dst_pdb_file_path
+    ddg_cmd += '\nrm mutant_traj* wt_traj*'  # Delete Rosetta annoying checkpoint files
     # Submit the job:
     print('Submitting for:', pdb_file_path)
     pbs_submit_cmd(np, ddg_cmd, ddg_rundir, idx)
@@ -158,7 +240,7 @@ def resubmit_ddg(pdb_file_path, idx):
     prep_restart_job(ddg_rundir, name)
     dst_pdb_file_path = ddg_rundir + '/' + name
     # Create the run command:
-    ddg_cmd = rosetta_ddg_app + ' ' + const_flags_ddg + ' -database ' + rosetta_db + ' -in:file:s ' + dst_pdb_file_path
+    ddg_cmd = args.rosetta_ddg_app + ' ' + const_flags_ddg + ' -database ' + args.rosetta_db + ' -in:file:s ' + dst_pdb_file_path
     # Submit the job:
     print('Resubmitting for:', pdb_file_path)
     pbs_submit_cmd(np, ddg_cmd, ddg_rundir, idx)
@@ -237,23 +319,23 @@ def ddg_success(ddg_file):
 ###### Action: Delete old logs, create a new resfile
 # Code 5: The job ended with success
 ### Response: Nothing (False)
-def ddg_choice(ddg_response, pdb_file_path, idx, folders_for_update2):
+def ddg_choice(ddg_response, pdb_file_path, idx, folders_for_ddg2):
     if ddg_response == 1:
         submit_ddg(pdb_file_path, idx)
-        folders_for_update2.append(pdb_file_path)
+        folders_for_ddg2.append(pdb_file_path)
     elif ddg_response == 2:
-        folders_for_update2.append(pdb_file_path)
+        folders_for_ddg2.append(pdb_file_path)
     elif ddg_response == 3:
-        folders_for_update2.append(pdb_file_path)
+        folders_for_ddg2.append(pdb_file_path)
     elif ddg_response == 4:
-        folders_for_update2.append(pdb_file_path)
+        folders_for_ddg2.append(pdb_file_path)
         resubmit_ddg(pdb_file_path, idx)
     elif ddg_response == 5:
         pass
     else:
         if verbose:
             print('Unforseen error. ddg_success could not be determined.')
-    return(folders_for_update2)
+    return(folders_for_ddg2)
 
 
 ### How an update resfile looks like:
@@ -321,8 +403,8 @@ def cst_min_success(folder):
 
 
 
-folders_for_update = db_home_dir + '/' + 'folders_for_update.txt'
-#folders_for_update = db_home_dir + '/' + 'folders_for_update2.txt'
+# folders_for_ddg = args.db_home_dir + '/' + 'folders_for_ddg.txt'
+#folders_for_ddg = db_home_dir + '/' + 'folders_for_ddg2.txt'
 # Or do glob to find all the folders:
 # glob.glob("/home/projects/cu_10020/data/precalculated_ddg/split/*/*/")
 
@@ -331,11 +413,11 @@ np = 1
 verbose = 0
 
 
-with open(folders_for_update) as fh:
+with open(args.folders_for_ddg) as fh:
     folder_list = fh.read().splitlines()
 
 job_idx = 0
-folders_for_update2 = list()
+folders_for_ddg2 = list()
 for idx, folder in enumerate(folder_list):
     if not cst_min_success(folder):
         continue
@@ -343,12 +425,12 @@ for idx, folder in enumerate(folder_list):
     files_for_ddg = glob.glob(ddg_file_glob)
     for ddg_file in files_for_ddg:
         ddg_response = ddg_success(ddg_file)
-        folders_for_update2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_update2)
+        folders_for_ddg2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_ddg2)
         job_idx += 1
 
 # Write an updated "folders to update" list:
-with open(folders_for_update, 'w') as fh_out:
-    print('\n'.join(folders_for_update2), file=fh_out)
+with open(args.folders_for_ddg, 'w') as fh_out:
+    print('\n'.join(folders_for_ddg2), file=fh_out)
 
 
 
