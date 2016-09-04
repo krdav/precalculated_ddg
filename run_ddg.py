@@ -431,7 +431,6 @@ for idx, folder in enumerate(folder_list):
     ddg_file_glob = folder + '/' + '*.pdb'
     files_for_ddg = glob.glob(ddg_file_glob)
     for ddg_file in files_for_ddg:
-        print(ddg_file)
         ddg_response = ddg_success(ddg_file)
         folders_for_ddg2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_ddg2)
         job_idx += 1
