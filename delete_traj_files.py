@@ -2,32 +2,56 @@ import glob
 import multiprocessing
 import os
 import sys
+import argparse
+
+
+# Build commandline parser
+parser = argparse.ArgumentParser(description="Remove the traj files created by the Rosetta ddg_monomer app.")
+
+# Arguments
+parser.add_argument(
+    "-db_split_dir",
+    "--db_split_dir",
+    type=str,
+    dest="db_split_dir",
+    metavar="PATH",
+    help="Absolute path to the split directory containing all the two character folders, pdb style.",
+    required=True)
+
+# Set default arguments
+parser.set_defaults()
+
+# Put arguments into args object:
+args = parser.parse_args()
 
 
 def delete_traj(split):
-    # print(split)
+    '''Find all protein directories in the split directory. Walk thorugh them and delete all _traj files.'''
+    # Find the protein folders:
     prot_glob = split + '*/'
     prots = glob.glob(prot_glob)
     for prot in prots:
+        # Find all the chain folders:
         chain_glob = prot + '*/'
         chains = glob.glob(chain_glob)
         for chain in chains:
-            # print(chain)
-            traj_glob = chain + 'mutant_traj*'
+            # Then find the all _traj files
+            traj_glob = chain + '*_traj*'
             trajs = glob.glob(traj_glob)
             for traj in trajs:
-                # print(traj)
+                # Delete the _traj files one by one.
+                # Use try to avoid termination if moving/removing while the script is running.
                 try:
-               	    os.remove(traj)
+                    os.remove(traj)
                 except:
                     pass
 
 
-split_dir = '/home/projects/cu_10020/data/precalculated_ddg/split'
-splits_glob = split_dir + '/' + '*/'
-splits = glob.glob(splits_glob)
-
-# print(splits)
-# sys.exit()
-pool = multiprocessing.Pool(28)
-output = pool.map(delete_traj, splits)
+if __name__ == "__main__":
+    '''Remove traj files from all the sub directories under the \"split\" dir.'''
+    # Find all the sub directories under split:
+    splits_glob = args.db_split_dir + '/' + '*/'
+    splits = glob.glob(splits_glob)
+    # Paralellise the process:
+    pool = multiprocessing.Pool(32)
+    output = pool.map(delete_traj, splits)

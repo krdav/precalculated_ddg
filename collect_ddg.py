@@ -3,13 +3,7 @@ import glob
 import sys
 import os
 import shutil
-import re
-import gzip
 import pickle
-import datetime
-import time
-import math
-import contextlib
 import multiprocessing
 import argparse
 
@@ -18,7 +12,7 @@ from Bio.PDB import *
 
 
 # Build commandline parser
-parser = argparse.ArgumentParser(description="Run the ddg_monomer in Rosetta.")
+parser = argparse.ArgumentParser(description="Collect the results from the Rosetta ddg_monomer app.")
 
 # Arguments
 parser.add_argument(
@@ -161,33 +155,6 @@ residue_type_3to1_map = {
 }
 
 
-AAletters = 'ACDEFGHIKLMNPQRSTVWY'
-
-D_isomer_AA = ["DAL", "DCY", "DAP", "DGU", "DPH",
-               "DGL", "DHI", "DIL", "DLY", "DLE",
-               "DME", "DMS", "DAN", "DPR", "DGN",
-               "DAR", "DSE", "DTH", "DVA", "DTR",
-               "DTY"]
-
-# Don't try to add other ptm's like acetylation etc.
-# It is not worth it.
-ptm_residues = ["SEP", "TPO", "PTR"]
-
-
-whitelist = ['MSE']
-
-whitelist.extend(D_isomer_AA)
-whitelist.extend(ptm_residues)
-
-
-# Currently nothing in blacklist
-# The badly modified residues are normally just cut out of the crystal
-blacklist = []
-
-# Remove from crystal structure:
-greylist = ["HOH"]
-
-
 def ddg_success(ddg_file):
     name = ddg_file.split('/')[-1][12:-9]
     folder = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
@@ -252,7 +219,7 @@ def ddg_success(ddg_file):
 # Code 1: No folder, or never started
 ### Don't do anything (False)
 # Code 2: Unforseen error
-### Response: Report a problem, and don't try to run it (False)
+### Response: Don't do anything (False)
 # Code 3: The job is still running
 ### Response: Let it run until it finishes (False)
 # Code 4: The job was killed for exceed run time limits
@@ -302,7 +269,10 @@ def write_ddG_results(folder, ddG_dict):
     resname = folder + '/ddG_results.txt'
     print(resname)
     with open(resname, 'a') as fh_out:
-        for name, res_list in sorted(ddG_dict.items()):
+        # Sort first according to the alphabet then according to length of the name.
+        # Effectively printing the monomeric results first and the dimeric second.
+        for name in sorted(sorted(ddG_dict), key=len):
+            res_list = ddG_dict[name]
             if len(name) == 1:
                 print('# Monomeric stability for chain', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
@@ -376,6 +346,7 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
 
 
 def get_AA_string(ddg_rundir, name):
+    '''fff'''
     fnam = ddg_rundir + '/' + name
     with open(fnam) as fh:
         lines = fh.readlines()
@@ -394,6 +365,7 @@ def get_AA_string(ddg_rundir, name):
 
 
 if __name__ == "__main__":
+    '''fff'''
     if not args.check_all_folders:
         with open(args.folders_for_ddg) as fh:
             folder_list = fh.read().splitlines()
