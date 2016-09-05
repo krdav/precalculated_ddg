@@ -301,7 +301,7 @@ def cst_min_success(folder):
 def write_ddG_results(folder, ddG_dict):
     resname = folder + '/ddG_results.txt'
     with open(resname, 'w') as fh_out:
-        for name, res_list in sorted(ddG_dict):
+        for name, res_list in sorted(ddG_dict.items()):
             if len(name) == 1:
                 print('# Monomeric stability for chain', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
@@ -318,7 +318,7 @@ def check_mapping(mapping_dict):
     # From 'PRO A   1 '
     # To 'PRO A   1 '
     new_mapping = dict()
-    for k, v in mapping_dict:
+    for k, v in mapping_dict.items():
         if k[0:3] != v[0:3]:
             print(k, v)
             sys.exit()
@@ -331,7 +331,6 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
     ddg_rundir = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
     ddg_outfile = ddg_rundir + '/' + 'ddg_predictions.out'
     ori_AAseq = get_AA_string(ddg_rundir, name)
-    os.mkdir(ddg_rundir)
     mapping_dict = check_mapping(mapping_dict)
     # Create a new dict for the chain:
     ddG_dict[name] = list()
@@ -368,6 +367,8 @@ def get_AA_string(ddg_rundir, name):
         prev_resnumb = '   0'
         AA_string = ''
         for line in lines:
+            if not line.startswith('ATOM'):
+                continue
             resnumb = line[22:26]
             if resnumb != prev_resnumb:
                 res_name = line[17:20]
