@@ -351,7 +351,7 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
             AA = rows[1][1]
             res_count = int(rows[1][1:-1])
             # Check for skipped residue:
-            while ori_AAseq[res_count - 1 + offset] != AA:
+            while ori_AAseq[res_count - 1 + offset] != AA or offset > 20:
                 offset += 1
             res_idx_string = 'A{:>4} '.format(res_count + offset)  # Notice chain A and the blank insertion code
             ori_res_idx_string = mapping_dict[res_idx_string]
@@ -376,32 +376,29 @@ def get_AA_string(ddg_rundir, name):
     return(AA_string)
 
 
+if __name__ == "__main__":
+    if not args.check_all_folders:
+        with open(args.folders_for_ddg) as fh:
+            folder_list = fh.read().splitlines()
+    else:
+        folder_list_glob = args.db_split_dir + '/*/*/'
+        folder_list = glob.glob(folder_list_glob)
+        folder_list = [f.rstrip('/') for f in folder_list]
 
-folders_for_update = db_home_dir + '/' + 'folders_for_update.txt'
-
-
-if not args.check_all_folders:
-    with open(args.folders_for_ddg) as fh:
-        folder_list = fh.read().splitlines()
-else:
-    folder_list_glob = args.db_split_dir + '/*/*/'
-    folder_list = glob.glob(folder_list_glob)
-    folder_list = [f.rstrip('/') for f in folder_list]
-
-for idx, folder in enumerate(folder_list):
-    if not cst_min_success(folder):
-        continue
-    mapping_path = folder + '/' + 'residue_mapping_dict.p'
-    mapping_dict = pickle.load(open(mapping_path, "rb"))
-    ddg_file_glob = folder + '/' + '*.pdb'
-    files_for_ddg = glob.glob(ddg_file_glob)
-    ddG_dict = dict()
-    for ddg_file in files_for_ddg:
-        ddg_response = ddg_success(ddg_file)
-        if not ddg_choice(ddg_response):
+    for idx, folder in enumerate(folder_list):
+        if not cst_min_success(folder):
             continue
-        ddG_dict = collect_ddg(ddg_file, mapping_dict, ddG_dict)
-    write_ddG_results(folder, ddG_dict)
+        mapping_path = folder + '/' + 'residue_mapping_dict.p'
+        mapping_dict = pickle.load(open(mapping_path, "rb"))
+        ddg_file_glob = folder + '/' + '*.pdb'
+        files_for_ddg = glob.glob(ddg_file_glob)
+        ddG_dict = dict()
+        for ddg_file in files_for_ddg:
+            ddg_response = ddg_success(ddg_file)
+            if not ddg_choice(ddg_response):
+                continue
+            ddG_dict = collect_ddg(ddg_file, mapping_dict, ddG_dict)
+        write_ddG_results(folder, ddG_dict)
 
 
 

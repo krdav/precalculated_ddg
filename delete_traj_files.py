@@ -3,6 +3,7 @@ import multiprocessing
 import os
 import sys
 
+
 def delete_traj(split):
     # print(split)
     prot_glob = split + '*/'

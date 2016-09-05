@@ -131,6 +131,7 @@ if args.folders_for_ddg[0] != '/':
 
 # Global variables:
 const_flags_ddg = '-resfile resfile.txt -ddg:weight_file soft_rep_design -ddg::iterations 1 -ddg::dump_pdbs false -ignore_unrecognized_res -ddg::local_opt_only true -ddg::suppress_checkpointing true -in::file::fullatom -ddg::mean true -ddg::min false -mute all -ddg::output_silent false'
+np = 1
 
 residue_type_3to1_map = {
     "ALA": "A",
@@ -412,33 +413,31 @@ def cst_min_success(folder):
 # Or do glob to find all the folders:
 # glob.glob("/home/projects/cu_10020/data/precalculated_ddg/split/*/*/")
 
+if __name__ == "__main__":
+    if not args.check_all_folders:
+        with open(args.folders_for_ddg) as fh:
+            folder_list = fh.read().splitlines()
+    else:
+        folder_list_glob = args.db_split_dir + '/*/*/'
+        folder_list = glob.glob(folder_list_glob)
+        folder_list = [f.rstrip('/') for f in folder_list]
 
-np = 1
+    job_idx = 0
+    folders_for_ddg2 = list()
+    for idx, folder in enumerate(folder_list):
+        if not cst_min_success(folder):
+            continue
+        ddg_file_glob = folder + '/' + '*.pdb'
+        files_for_ddg = glob.glob(ddg_file_glob)
+        for ddg_file in files_for_ddg:
+            ddg_response = ddg_success(ddg_file)
+            folders_for_ddg2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_ddg2)
+            job_idx += 1
 
-if not args.check_all_folders:
-    with open(args.folders_for_ddg) as fh:
-        folder_list = fh.read().splitlines()
-else:
-    folder_list_glob = args.db_split_dir + '/*/*/'
-    folder_list = glob.glob(folder_list_glob)
-    folder_list = [f.rstrip('/') for f in folder_list]
-
-job_idx = 0
-folders_for_ddg2 = list()
-for idx, folder in enumerate(folder_list):
-    if not cst_min_success(folder):
-        continue
-    ddg_file_glob = folder + '/' + '*.pdb'
-    files_for_ddg = glob.glob(ddg_file_glob)
-    for ddg_file in files_for_ddg:
-        ddg_response = ddg_success(ddg_file)
-        folders_for_ddg2 = ddg_choice(ddg_response, ddg_file, job_idx, folders_for_ddg2)
-        job_idx += 1
-
-# Write an updated "folders to update" list:
-folders_for_ddg2 = list({'/'.join(f.split('/')[:-1]): 1 for f in folders_for_ddg2}.keys())
-with open(args.folders_for_ddg, 'w') as fh_out:
-    print('\n'.join(folders_for_ddg2), file=fh_out)
+    # Write an updated "folders to update" list:
+    folders_for_ddg2 = list({'/'.join(f.split('/')[:-1]): 1 for f in folders_for_ddg2}.keys())
+    with open(args.folders_for_ddg, 'w') as fh_out:
+        print('\n'.join(folders_for_ddg2), file=fh_out)
 
 
 
