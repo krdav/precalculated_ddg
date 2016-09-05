@@ -275,12 +275,13 @@ class ReadWriteProtein:
             with open(outname, 'w') as fh_out:
                 atom_idx = 0
                 res_idx = 0
-                cur_res = 'XXX'
+                prev_resnumb = '   X '
                 for line in lines:
                     lline = list(line)
                     atom_idx += 1
-                    if line[17:20] != cur_res:
-                        cur_res = line[17:20]
+                    resnumb = line[22:27]
+                    if resnumb != prev_resnumb:
+                        prev_resnumb = resnumb
                         res_idx += 1
                     lline[6:11] = list('{:>5}'.format(atom_idx))
                     res_idx_string = '{:>4} '.format(res_idx)  # Notice the blank insertion code
@@ -362,13 +363,14 @@ class ReadWriteProtein:
             with open(outname, 'w') as fh_out:
                 atom_idx = 0
                 res_idx = 0
-                cur_res = 'XXX'
+                prev_resnumb = '   X '
                 new_chain_name = 'A'
                 for line in all_lines:
                     lline = list(line)
                     atom_idx += 1
-                    if line[17:20] != cur_res:
-                        cur_res = line[17:20]
+                    resnumb = line[22:27]
+                    if resnumb != prev_resnumb:
+                        prev_resnumb = resnumb
                         res_idx += 1
                     lline[6:11] = list('{:>5}'.format(atom_idx))
                     lline[21] = new_chain_name
