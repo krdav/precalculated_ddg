@@ -1,4 +1,3 @@
-
 import glob
 import sys
 import os
@@ -6,10 +5,6 @@ import shutil
 import pickle
 import multiprocessing
 import argparse
-
-sys.path.insert(0, '/home/projects/cu_10020/apps/python3-site-packages/lib/python/')
-from Bio.PDB import *
-
 
 # Build commandline parser
 parser = argparse.ArgumentParser(description="Collect the results from the Rosetta ddg_monomer app.")
@@ -55,27 +50,10 @@ parser.add_argument(
     metavar="VERBOSE",
     help="Should the script be verbose?",
     required=False)
-parser.add_argument(
-    "-ve",
-    "--verbose_error",
-    type=int,
-    dest="verbose_error",
-    metavar="SWITCH",
-    help="Should the script be verbose on error only? On by default.",
-    required=False)
-parser.add_argument(
-    "-restart_failed",
-    "--restart_failed",
-    type=int,
-    dest="restart_failed",
-    metavar="SWITCH",
-    help="Try to restart those jobs that failed. Default 0.",
-    required=False)
 
 # Set default arguments
 parser.set_defaults(
-    verbose_error=1,
-    restart_failed=0)
+    check_all_folders=1)
 
 # Put arguments into args object:
 args = parser.parse_args()
@@ -156,21 +134,24 @@ residue_type_3to1_map = {
 
 
 def ddg_success(ddg_file):
-    name = ddg_file.split('/')[-1][12:-9]
-    folder = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
-    ddg_outfile = folder + '/' + 'ddg_predictions.out'
+    '''Investigate the success of the ddG run of a given protein chain.'''
+    # Hacky way of getting the chain name from the cst_min pdb output name:
+    name = ddg_file.split('/')[-1][12:-9]  # Chain name
+    folder = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'  # ddG rundir for the chain
+    ddg_outfile = folder + '/' + 'ddg_predictions.out'  # ddG predction results for the chain
     # If either the ddg_rundir or the ddg_predictions.out file is missing,
     # there cannot have been a successful ddg run:
     if not os.path.exists(folder):  # Code 1: No folder, or never started and the minimized structure is there
         if args.verbose:
-            print('The ddg folder could not be found. Proceeding to submit this as a job. Folder:\n', folder)
+            print('The ddg folder could not be found. Run the ddG application submission script. Folder:\n', folder)
         return(1)
     elif not os.path.exists(ddg_outfile):  # Code 1: No folder, or never started
         if args.verbose:
-            print('The ddg_predictions.out file could not be found. Proceeding to submit this as a job. Folder:\n', folder)
+            print('The ddg_predictions.out file could not be found. Run the ddG application submission script again. Folder:\n', folder)
         shutil.rmtree(folder)
         return(1)
     elif os.path.exists(ddg_outfile):  # The job has either fininshed succesfully or somthing went wrong
+        # Glob to find error and out logs:
         out_log_glob_string = folder + '/' + 'sub*_log.out'
         out_log_glob = glob.glob(out_log_glob_string)
         err_log_glob_string = folder + '/' + 'sub*_log.err'
@@ -227,6 +208,7 @@ def ddg_success(ddg_file):
 # Code 5: The job ended with success
 ### Response: Collect ddG values (True)
 def ddg_choice(ddg_response):
+    '''Determine how to proceed with the ddG value collection based on the return code.'''
     if ddg_response == 1:
         return(False)
     elif ddg_response == 2:
@@ -244,6 +226,8 @@ def ddg_choice(ddg_response):
 
 
 def cst_min_success(folder):
+    '''Investigate if the cst_min application ran succesfully.'''
+    # Glob to find error and out logs:
     out_log_glob_string = folder + '/' + 'sub*_log.out'
     out_log_glob = glob.glob(out_log_glob_string)
     if len(out_log_glob) > 1:
@@ -254,6 +238,7 @@ def cst_min_success(folder):
         return(False)
     else:
         out_log = out_log_glob[0]
+
     with open(out_log) as fh:
         lines = fh.readlines()
         # Apparently the cst_min app ends with this on success:
@@ -266,19 +251,20 @@ def cst_min_success(folder):
 
 
 def write_ddG_results(folder, ddG_dict):
-    resname = folder + '/ddG_results.txt'
+    '''Write all the results in ddG_dict to a file in the main folder for the given protein.'''
+    resname = folder + '/ddG_results.txt'  # Name of the results file
     print(resname)
     with open(resname, 'a') as fh_out:
         # Sort first according to the alphabet then according to length of the name.
         # Effectively printing the monomeric results first and the dimeric second.
         for name in sorted(sorted(ddG_dict), key=len):
             res_list = ddG_dict[name]
-            if len(name) == 1:
+            if len(name) == 1:  # Monomeric stability
                 print('# Monomeric stability for chain', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
                 tab_list = ['\t'.join(t[0:]) for t in res_list]
                 print('\n'.join(tab_list), file=fh_out)
-            elif len(name) == 2:
+            elif len(name) == 2:  # Dimer stability
                 print('# Complex stability for chain complex', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
                 tab_list = ['\t'.join(t[0:]) for t in res_list]
@@ -286,11 +272,16 @@ def write_ddG_results(folder, ddG_dict):
 
 
 def check_mapping(mapping_dict):
+    '''This is just a function to edit the mapping dict and remove the residue type.
+    The reason for doing this is that the mapping between single letter codes in the
+    ddg_predictions.txt are ambiguous with respect to the three letter code
+    because of dextro -and modified residues.'''
     ### Shorten the keys:
     # From 'PRO A   1 '
     # To '   1 '
     new_mapping = dict()
     for k, v in mapping_dict.items():
+        # Make sure that the residues are the same between the mappnings:
         if k[0:4] != v[0:4]:
             print(k, v)
             sys.exit()
@@ -299,55 +290,73 @@ def check_mapping(mapping_dict):
 
 
 def collect_ddg(ddg_file, mapping_dict, ddG_dict):
-    name = ddg_file.split('/')[-1][12:-9]
-    ddg_rundir = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
-    ddg_outfile = ddg_rundir + '/' + 'ddg_predictions.out'
+    '''Collect the ddG results for a protein and write the results into a file,
+     mapping the ddG values back to the original protein residue numbering.'''
+    # Hacky way of getting the chain name from the cst_min pdb output name:
+    name = ddg_file.split('/')[-1][12:-9]  # Chain name
+    ddg_rundir = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'  # Chain rundir
+    ddg_outfile = ddg_rundir + '/' + 'ddg_predictions.out'  # Prediction results from the ddg_monomer application
+    # Get the original AA seq to test if any residues have been skipped by the ddg_monomer application:
     ori_AAseq = get_AA_string(ddg_rundir, name)
     print(name, ori_AAseq)
     print()
+    # Correct the mapping dictionary to reflect usage of dextro -and modified residues:
     chain_map = check_mapping(mapping_dict[name])
-    # Create a new dict for the chain:
+    # Create a new list for the chain:
     ddG_dict[name] = list()
-    offset = 0
-    res_count = 0
+    offset = 0     # Offset if ddg_monomer have skipped some residues
+    res_count = 0  # Residue count according to the ddg_prediction.txt
+    del_flag = 0   # Flag the chains where mapping fails
     with open(ddg_outfile) as fh:
         lines = fh.readlines()
         for line in lines:
-            if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
-                print("Offset is very high. Many residues have been skipped. Terminating:", ddg_outfile)
-                sys.exit()
             line = line.strip()
             if not line:
                 continue
             elif line.startswith('ddG: description'):
                 continue
-            rows = line.split()
-            AA = rows[1][0]
-            res_count = int(rows[1][1:-1])
+            # Max number of skipped residues:
+            if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
+                print("Offset is very high. Many residues have been skipped. Terminating:", ddg_outfile)
+                del_flag = 1
+                break
+            # Extract results for the columns of the ddg_predictions.txt:
+            cols = line.split()
+            AA = cols[1][0]
+            AA_mut = cols[1][-1]
+            res_count = int(cols[1][1:-1])
             # Check for skipped residue:
-            # while (res_count - 1 + offset) < len(ori_AAseq) or offset < 20:
             ori_AA = ori_AAseq[res_count - 1 + offset]
-            while ori_AA != AA:
+            while ori_AA != AA:  # Start looping if the chain is broken
                 print(res_count)
                 print('obs:', AA)
                 print('ori', ori_AAseq[res_count - 1 + offset])
                 print()
                 offset += 1
+                # Break either if the offset gets to high or the matching amino acid is found:
                 if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
+                    del_flag = 1
                     break
                 elif ori_AAseq[res_count - 1 + offset] == AA:
                     break
+            # Create the new residue mapping:
             res_idx_string = '{:>4} '.format(res_count + offset)  # Notice the blank insertion code
+            # Look-up the original residue mapping:
             ori_res_idx_string = chain_map[res_idx_string]
-            from_to = rows[1][0] + '->' + rows[1][-1]
-            res_tuple = (ori_res_idx_string, from_to, rows[2])
+            # Create a "from to" string:
+            from_to = AA + '->' + AA_mut
+            # Put this into a tuple with the ddG value and append it the results dictionary:
+            res_tuple = (ori_res_idx_string, from_to, cols[2])
             ddG_dict[name].append(res_tuple)
+        # If faulty run, delete the chain:
+        if del_flag:
+            del ddG_dict[name]
     return(ddG_dict)
 
 
 def get_AA_string(ddg_rundir, name):
-    '''fff'''
-    fnam = ddg_rundir + '/' + name
+    '''Get the original amino acid sequence for the given chain. Monomer or complex.'''
+    fnam = ddg_rundir + '/' + name  # Path of the renamed chain we are looking at
     with open(fnam) as fh:
         lines = fh.readlines()
         prev_resnumb = '   0'
@@ -355,6 +364,7 @@ def get_AA_string(ddg_rundir, name):
         for line in lines:
             if not line.startswith('ATOM'):
                 continue
+            # When observing a new resnumber add the amino acid:
             resnumb = line[22:27]
             if resnumb != prev_resnumb:
                 prev_resnumb = resnumb
@@ -364,41 +374,44 @@ def get_AA_string(ddg_rundir, name):
     return(AA_string)
 
 
+def run_parallel(folder):
+    # If the cst_min failed then return:
+    if not cst_min_success(folder):
+        return(False)
+    # Use the residue mapping created by the run_cst app:
+    mapping_path = folder + '/' + 'residue_mapping_dict.p'
+    mapping_dict = pickle.load(open(mapping_path, "rb"))
+    # Glob to find all the cst_min minimized structures:
+    ddg_file_glob = folder + '/' + '*.pdb'
+    files_for_ddg = glob.glob(ddg_file_glob)
+    # If previous runs have already generated results delete them:
+    resname = folder + '/ddG_results.txt'
+    if os.path.isfile(resname):
+        os.remove(resname)
+    # Run through all the monomers/dimers and fill up the ddG_dict:
+    ddG_dict = dict()
+    for ddg_file in files_for_ddg:
+        # Check if the ddG run was succesfull and if not skip this chain:
+        ddg_response = ddg_success(ddg_file)
+        if not ddg_choice(ddg_response):
+            continue
+        # Add the results to the ddG_dict:
+        ddG_dict = collect_ddg(ddg_file, mapping_dict, ddG_dict)
+    # Finally write the result to a file in the protein folder:
+    write_ddG_results(folder, ddG_dict)
+
+
 if __name__ == "__main__":
-    '''fff'''
+    # Either check all folders or a list provided:
     if not args.check_all_folders:
         with open(args.folders_for_ddg) as fh:
             folder_list = fh.read().splitlines()
     else:
+        # If all folders should be checked then glob is used:
         folder_list_glob = args.db_split_dir + '/*/*/'
         folder_list = glob.glob(folder_list_glob)
         folder_list = [f.rstrip('/') for f in folder_list]
 
-    for idx, folder in enumerate(folder_list):
-        if not cst_min_success(folder):
-            continue
-        mapping_path = folder + '/' + 'residue_mapping_dict.p'
-        mapping_dict = pickle.load(open(mapping_path, "rb"))
-        ddg_file_glob = folder + '/' + '*.pdb'
-        files_for_ddg = glob.glob(ddg_file_glob)
-        ddG_dict = dict()
-        resname = folder + '/ddG_results.txt'
-        if os.path.isfile(resname):
-            os.remove(resname)
-        for ddg_file in files_for_ddg:
-            ddg_response = ddg_success(ddg_file)
-            if not ddg_choice(ddg_response):
-                continue
-            ddG_dict = collect_ddg(ddg_file, mapping_dict, ddG_dict)
-        write_ddG_results(folder, ddG_dict)
-
-
-
-
-
-
-
-
-
-
-
+    # Paralellise the process:
+    pool = multiprocessing.Pool(28)
+    output = pool.map(run_parallel, folder_list)

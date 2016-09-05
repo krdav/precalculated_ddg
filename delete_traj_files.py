@@ -48,7 +48,6 @@ def delete_traj(split):
 
 
 if __name__ == "__main__":
-    '''Remove traj files from all the sub directories under the \"split\" dir.'''
     # Find all the sub directories under split:
     splits_glob = args.db_split_dir + '/' + '*/'
     splits = glob.glob(splits_glob)
