@@ -17,7 +17,10 @@ def delete_traj(split):
             trajs = glob.glob(traj_glob)
             for traj in trajs:
                 # print(traj)
-                os.remove(traj)
+                try:
+               	    os.remove(traj)
+                except:
+                    pass
 
 
 split_dir = '/home/projects/cu_10020/data/precalculated_ddg/split'
