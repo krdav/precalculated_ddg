@@ -169,7 +169,7 @@ def ddg_success(ddg_file):
         else:  # Check if the logs indicate success
             out_log = out_log_glob[0]
             err_log = err_log_glob[0]
-
+        # Parse the error log:
         with open(err_log) as fh:
             lines = fh.readlines()
         if not lines:  # If the error log is empty
@@ -182,7 +182,7 @@ def ddg_success(ddg_file):
             if args.verbose:
                 print('Rosetta have thrown an error an aborted:\n', folder)
             return(2)
-
+        # Parse the out log:
         with open(out_log) as fh:
             lines = fh.readlines()
             # Apparently the ddg:monomer app ends with this on success:
@@ -412,6 +412,6 @@ if __name__ == "__main__":
         folder_list = glob.glob(folder_list_glob)
         folder_list = [f.rstrip('/') for f in folder_list]
 
-    # Paralellise the process:
+    # Paralellize the process:
     pool = multiprocessing.Pool(28)
     output = pool.map(run_parallel, folder_list)

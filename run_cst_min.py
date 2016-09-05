@@ -1,14 +1,9 @@
 import sys
 import os
 import shutil
-import re
 import gzip
 import pickle
-import datetime
 import time
-import math
-import contextlib
-import multiprocessing
 import argparse
 import glob
 
@@ -123,6 +118,7 @@ if args.prot_list_file[0] != '/':
 
 # Global variables:
 const_flags_min_cst = '-in:file:fullatom -ignore_unrecognized_res -fa_max_dis 9.0 -ddg::harmonic_ca_tether 0.5 -ddg::constraint_weight 1.0 -ddg::out_pdb_prefix min_cst_0.5 -ddg::sc_min_only false'
+np = 1
 
 residue_type_3to1_map = {
     "ALA": "A",
@@ -165,19 +161,12 @@ whitelist.extend(D_isomer_AA)
 whitelist.extend(ptm_residues)
 
 
-# Currently nothing in blacklist
-# The badly modified residues are normally just cut out of the crystal by only allowing residues from the whitelist:
-blacklist = []
-
-# Remove from crystal structure:
-greylist = ["HOH"]
-
-
 def QC_prot_check(prot_path):
-    min_res = 10  # Minimum resolution
-    resolution = 0
-    xray = 0
-    canonical = 1
+    '''Check the quality of the protein in the list.'''
+    min_res = 10    # Minimum resolution
+    resolution = 0  # Resolution good/bad switch
+    xray = 0        # Method good/bad switch
+    canonical = 1   # Residue good/bad switch
     with gzip.open(prot_path) as fh:
         lines = fh.readlines()
         for line in lines:
@@ -197,7 +186,7 @@ def QC_prot_check(prot_path):
                 except:
                     pass
             # Exlude amino acids on the blacklist:
-            elif (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] in blacklist:
+            elif line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM':
                 canonical = 0
                 break
         # A PDB ID is kept if both xray and resolution flags checks out:
@@ -206,7 +195,9 @@ def QC_prot_check(prot_path):
 
 
 class ReadWriteProtein:
+    '''Class to read and write the input PDB file.'''
     def _fetch_chain_lines(self, prot_path):
+        '''Read the PDB file into a dictionary based on each chain having its own key.'''
         chain_lines = dict()
         with gzip.open(prot_path) as fh:
             lines = fh.readlines()
@@ -215,9 +206,9 @@ class ReadWriteProtein:
                 line = str(line, 'utf-8')
                 line = line.rstrip('\n')
                 # Find residues and ligands:
-                # if (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] not in greylist:
                 if (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] in whitelist:  # Require residues to be known by Rosetta
                     chain_name = line[21]
+                    # Make the dictionary by chain name:
                     if chain_name not in chain_lines:
                         chain_lines[chain_name] = list()
                         chain_lines[chain_name].append(line)
@@ -231,19 +222,20 @@ class ReadWriteProtein:
         if 'pdb' in path_list[-1]:
             split_key = path_list[-1][4:6]
         else:
-            pass  # Do something here later
+            pass  # DO SOMETHING HERE IF HOMOLOGY MODELS ARE TO BE USED
         return(split_key)
 
     def _make_prot_name(self, prot_path):
-        '''gggg'''
+        '''Make a name for the protein.'''
         path_list = prot_path.split('/')
         if 'pdb' in path_list[-1]:
             prot_name = path_list[-1][3:7]
         else:
-            pass  # Do something here later
+            pass  # DO SOMETHING HERE IF HOMOLOGY MODELS ARE TO BE USED
         return(prot_name)
 
     def _write_protein(self, new_prot_folder, prot_name, chain_lines):
+        '''Copy the protein as it is from the provided compressed file.'''
         outname = new_prot_folder + '/' + prot_name
         with open(outname, 'w') as fh_out:
             for chain_name, lines in chain_lines.items():
@@ -267,7 +259,10 @@ class ReadWriteProtein:
         self._write_protein(self.new_prot_folder, self.prot_name, self.chain_lines)
 
     def write_monomers(self):
+        '''Write a monomeric protein chain to a file. Renumber the residue so they have consecutive numbering.
+        Store the mapping so the original residue number can be recovered later.'''
         filenames = list()
+        # Run through all the chains:
         for chain_name, lines in self.chain_lines.items():
             outname = self.new_prot_folder + '/' + chain_name
             filenames.append(outname)
@@ -277,34 +272,35 @@ class ReadWriteProtein:
                 res_idx = 0
                 prev_resnumb = '   X '
                 for line in lines:
+                    # Convert line to list:
                     lline = list(line)
                     atom_idx += 1
                     resnumb = line[22:27]
+                    # The new residue number is incremented upon finding a new residue number in the original file:
                     if resnumb != prev_resnumb:
                         prev_resnumb = resnumb
                         res_idx += 1
-                    lline[6:11] = list('{:>5}'.format(atom_idx))
-                    res_idx_string = '{:>4} '.format(res_idx)  # Notice the blank insertion code
+                    lline[6:11] = list('{:>5}'.format(atom_idx))  # New atom index
+                    res_idx_string = '{:>4} '.format(res_idx)     # New residue index, notice the blank insertion code
                     lline[22:27] = list(res_idx_string)
-                    # Save the mapping:
-                    # self.mapping_dict[chain_name][res_idx_string] = line[21:27]  # Notice that the list slice is including both chain name, residue number and insertion code
+                    # Recreate the renumbered line and print it:
                     new_line = ''.join(lline)
                     print(new_line, file=fh_out)
                     # Save the mapping:
                     self.mapping_dict[chain_name][new_line[17:27]] = line[17:27]  # Notice that the list slice is including both residue type, chain name, residue number and insertion code
-
         # Dump the mapping:
         mapping_path = self.new_prot_folder + '/' + 'residue_mapping_dict.p'
         pickle.dump(self.mapping_dict, open(mapping_path, "wb"))
         return(filenames)
 
     def _find_dimers(self, new_prot_folder, prot_name, chain_lines):
-        parser = PDBParser()
+        '''Look through all atoms in a PDB file to find the chains that have atoms closer than within a cutoff distance.'''
+        parser = PDBParser()  # Use the Biopython PDB module to find the distances
         new_prot_path = new_prot_folder + '/' + prot_name
         pdb_obj = parser.get_structure(prot_name, new_prot_path)[0]  # Notice the first model in the structures object is fetch right away
-        dist_cut = 20  # Interactions cannot be further away than 20A backbone atom to backbone atom
-        interaction_cut = 3  # Maximum distance that defines an interaction
+        dist_cut = 20        # Interactions cannot be further away than 20A backbone atom to backbone atom
         # R -> E = 7.1A + 4.9A = 12A + bond max 15A to give a bit of freedom go to 20A
+        interaction_cut = 3  # Maximum distance that defines an interaction
         dimers = list()
         chains = list(chain_lines.keys())
         chains_copy = chains[:]
@@ -348,36 +344,41 @@ class ReadWriteProtein:
         return(dimers)
 
     def write_dimers(self):
+        '''Write a dimeric protein chain to a file. Renumber the residue so they have consecutive numbering.
+        Store the mapping so the original residue number can be recovered later.'''
+        # Find the dimers based on a distance criteria:
         self.dimers = self._find_dimers(self.new_prot_folder, self.prot_name, self.chain_lines)
-        filenames = list()
+        filenames = list()  # List of chain filenames
         # The pair must be two characters chain_name1chain_name2
         # and the order of the characters must be alphabetic!
         for pair in self.dimers:
             self.mapping_dict[pair] = dict()
             outname = self.new_prot_folder + '/' + pair
             filenames.append(outname)
+            # Fetch all the lines from both chains:
             lines1 = self.chain_lines[pair[0]]
             lines2 = self.chain_lines[pair[1]]
             all_lines = lines1 + lines2
-
+            # Now write the dimeric PDB file:
             with open(outname, 'w') as fh_out:
                 atom_idx = 0
                 res_idx = 0
                 prev_resnumb = '   X '
-                new_chain_name = 'A'
+                new_chain_name = 'A'  # Rename the new concatenated chain, A
                 for line in all_lines:
+                    # Convert line to list:
                     lline = list(line)
                     atom_idx += 1
                     resnumb = line[22:27]
+                    # The new residue number is incremented upon finding a new residue number in the original file:
                     if resnumb != prev_resnumb:
                         prev_resnumb = resnumb
                         res_idx += 1
-                    lline[6:11] = list('{:>5}'.format(atom_idx))
+                    lline[6:11] = list('{:>5}'.format(atom_idx))  # New atom index
                     lline[21] = new_chain_name
-                    res_idx_string = '{:>4} '.format(res_idx)  # Notice the blank insertion code
+                    res_idx_string = '{:>4} '.format(res_idx)     # New residue index, notice the blank insertion code
                     lline[22:27] = list(res_idx_string)
-                    # Save the mapping:
-                    # self.mapping_dict[pair][res_idx_string] = line[21:27]  # Notice that the list slice is including both chain name, residue number and insertion code
+                    # Recreate the renumbered line and print it:
                     new_line = ''.join(lline)
                     print(new_line, file=fh_out)
                     # Save the mapping:
@@ -398,6 +399,7 @@ def clean_list(l):
 
 
 def pbs_submit_cmd(np, cmd_flags, run_dir, idx):
+    '''Submit the cst_min minimization as a job to the queueing system.'''
     os.chdir(run_dir)
     log_err = run_dir + '/sub' + str(idx) + '_log.err'
     log_out = run_dir + '/sub' + str(idx) + '_log.out'
@@ -436,7 +438,7 @@ echo ---------------------------------------------------------------------------
 
     cmd = 'qsub {}'.format(qsub_path)
     os.system(cmd)
-    time.sleep(1)
+    time.sleep(1)  # Added a small time delay to let the queueing system work
 
 
 def make_split_key(prot_path):
@@ -445,28 +447,22 @@ def make_split_key(prot_path):
     if 'pdb' in path_list[-1]:
         split_key = path_list[-1][4:6]
     else:
-        pass  # Do something here later
+        pass  # DO SOMETHING HERE IF HOMOLOGY MODELS ARE TO BE USED
     return(split_key)
 
 
 def make_prot_name(prot_path):
-    '''gggg'''
+    '''Make the protein name from the original path of the compressed input PDB.'''
     path_list = prot_path.split('/')
     if 'pdb' in path_list[-1]:
         prot_name = path_list[-1][3:7]
     else:
-        pass  # Do something here later
+        pass  # DO SOMETHING HERE IF HOMOLOGY MODELS ARE TO BE USED
     return(prot_name)
 
 
-def entry_exists(prot_path, db_split_dir):
-    split_key = make_split_key(prot_path)
-    prot_name = make_prot_name(prot_path)
-    new_prot_folder = db_split_dir + '/' + split_key + '/' + prot_name
-    return(os.path.exists(new_prot_folder))
-
-
 def write_resfile(new_prot_folder):
+    '''Write a resfile specifying that all residue are repackable.'''
     s = 'ALLAA'
     outname = new_prot_folder + '/resfile.txt'
     with open(outname, 'w') as fh_out:
@@ -474,12 +470,14 @@ def write_resfile(new_prot_folder):
 
 
 def write_update_folder(db_home_dir, update_sack):
+    '''Empty the sack of paths to proteins to run.'''
     outname = db_home_dir + '/' + 'folders_for_update.txt'
     with open(outname, 'w') as fh_out:
         print('\n'.join(update_sack), file=fh_out)
 
 
 def cst_min_success(prot_path, db_split_dir):
+    '''Investigate whether the cst_min run was a success or not.'''
     split_key = make_split_key(prot_path)
     prot_name = make_prot_name(prot_path)
     new_prot_folder = db_split_dir + '/' + split_key + '/' + prot_name
@@ -488,7 +486,7 @@ def cst_min_success(prot_path, db_split_dir):
         return(1)
     else:
         pass
-
+    # Glob to find the error -and out logs:
     out_log_glob_string = new_prot_folder + '/' + 'sub*_log.out'
     out_log_glob = glob.glob(out_log_glob_string)
     err_log_glob_string = new_prot_folder + '/' + 'sub*_log.err'
@@ -505,7 +503,7 @@ def cst_min_success(prot_path, db_split_dir):
     else:  # Check if the logs indicate success
         out_log = out_log_glob[0]
         err_log = err_log_glob[0]
-
+    # Open the error log and parse it:
     with open(err_log) as fh:
         lines = fh.readlines()
     if not lines:  # If the error log is empty
@@ -518,7 +516,7 @@ def cst_min_success(prot_path, db_split_dir):
         if args.verbose or args.verbose_error:
             print('Rosetta have thrown an error an aborted:\n', new_prot_folder)
         return(2)
-
+    # Open the output log and parse it:
     with open(out_log) as fh:
         lines = fh.readlines()
         # Apparently the cst:min app ends with this on success:
@@ -550,6 +548,7 @@ def cst_min_success(prot_path, db_split_dir):
 # Code 6: The job was submitted multiple times resulting in overlapping output names
 ### Response: Nothing (False)
 def min_cst_choice(response, db_split_dir, prot_path):
+    '''Determine what the response should be based on the cst_run return code.'''
     split_key = make_split_key(prot_path)
     prot_name = make_prot_name(prot_path)
     new_prot_folder = db_split_dir + '/' + split_key + '/' + prot_name
@@ -576,38 +575,38 @@ def min_cst_choice(response, db_split_dir, prot_path):
 
 
 if __name__ == "__main__":
+    # Skip reading and writing of the protein,
+    # and go directly to submission of cst_min:
     if not args.skip_RW:
+        # Read the input list:
         with open(args.prot_list_file) as fh:
             prot_list = fh.read().splitlines()
         prot_list = clean_list(prot_list)
-        update_sack = list()
-        # os.chdir(db_split_dir)
+        update_sack = list()  # Sack of paths to proteins that requires runnning cst_min
         for prot_path in prot_list:
             # Skip bad proteins:
             if not QC_prot_check(prot_path):
                 print('Following protein did not meet the QC requiemnents:\n{}'.format(prot_path))
                 continue
-
             # Skip runs that are already running or failing for some reason:
             cst_min_response = cst_min_success(prot_path, args.db_split_dir)
             cst_process = min_cst_choice(cst_min_response, args.db_split_dir, prot_path)
             if not cst_process:
                 continue
-
             # Read protein into an object:
             RWprotein_obj = ReadWriteProtein(prot_path, args.db_split_dir)
-
+            # Get info from the read/write protein object:
             split_key = RWprotein_obj.split_key
             prot_name = RWprotein_obj.prot_name
             new_prot_folder = RWprotein_obj.new_prot_folder
-
             monomer_filenanes = RWprotein_obj.write_monomers()
             dimer_filenanes = RWprotein_obj.write_dimers()
+            # Concatenate all the monomer/dimer filename together and write them to the protein folder.
+            # This list will be used as input to the cst_min later.
             all_filenames = monomer_filenanes + dimer_filenanes
             filenames_outname = new_prot_folder + '/' + 'filenames_for_cst_min.txt'
             with open(filenames_outname, 'w') as fh_out:
                 print('\n'.join(all_filenames), file=fh_out)
-
             # Write a resfile to the folder with the newly created PDB files:
             write_resfile(new_prot_folder)
             # Put the folder in the sack for cst_min and ddG calculations:
@@ -615,12 +614,12 @@ if __name__ == "__main__":
         # Then write the folder of the files that needs updating:
         write_update_folder(args.db_home_dir, update_sack)
 
+    # Read the above writen, or pregenerated, list of proteins to update:
     folders_for_update = args.db_home_dir + '/' + 'folders_for_update.txt'
     cst_filelist_name = 'filenames_for_cst_min.txt'
-    np = 1
     with open(folders_for_update) as fh:
         folder_list = fh.read().splitlines()
-
+    # Then loop through all protein folders, submitting them each as a job:
     for idx, folder in enumerate(folder_list):
         if folder == '':
             continue
@@ -631,10 +630,3 @@ if __name__ == "__main__":
             pbs_submit_cmd(np, cst_cmd, folder, idx)
         except Exception as e:
             print(e)
-
-
-
-
-
-
-

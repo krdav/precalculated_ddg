@@ -1,20 +1,9 @@
-
 import glob
 import sys
 import os
 import shutil
-import re
-import gzip
-import pickle
-import datetime
 import time
-import math
-import contextlib
-import multiprocessing
 import argparse
-
-sys.path.insert(0, '/home/projects/cu_10020/apps/python3-site-packages/lib/python/')
-from Bio.PDB import *
 
 
 # Build commandline parser
@@ -175,6 +164,7 @@ whitelist.extend(ptm_residues)
 
 
 def pbs_submit_cmd(np, cmd_flags, run_dir, idx):
+    '''Submit a job to the queue.'''
     os.chdir(run_dir)
     log_err = run_dir + '/sub' + str(idx) + '_log.err'
     log_out = run_dir + '/sub' + str(idx) + '_log.out'
@@ -213,14 +203,15 @@ echo ---------------------------------------------------------------------------
 
     cmd = 'qsub {}'.format(qsub_path)
     os.system(cmd)
-    time.sleep(1)
+    time.sleep(1)  # Added a small time delay to let the queueing system work
 
 
 def submit_ddg(pdb_file_path, idx):
+    '''Prepare for and submit a ddg_monomer run to the queue.'''
     # Hacky way of getting the chain/pair name:
     name = pdb_file_path.split('/')[-1][12:-9]
     ddg_rundir = '/'.join(pdb_file_path.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
-
+    # Make the rundir:
     os.mkdir(ddg_rundir)
     dst_pdb_file_path = ddg_rundir + '/' + name
     # Copy the relevant pdb file:
@@ -238,10 +229,11 @@ def submit_ddg(pdb_file_path, idx):
 
 
 def resubmit_ddg(pdb_file_path, idx):
+    '''Resubmit a failed/terminated ddg monomer run to the queue.'''
     # Hacky way of getting the chain/pair name:
     name = pdb_file_path.split('/')[-1][12:-9]
     ddg_rundir = '/'.join(pdb_file_path.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
-
+    # Prepare for resubmission:
     prep_restart_job(ddg_rundir, name)
     dst_pdb_file_path = ddg_rundir + '/' + name
     # Create the run command:
@@ -251,8 +243,10 @@ def resubmit_ddg(pdb_file_path, idx):
     pbs_submit_cmd(np, ddg_cmd, ddg_rundir, idx)
 
 
-### Look for checkpoints to restart a job from the residue it ended with
 def ddg_success(ddg_file):
+    '''Investigate whether a job has already run and if so,
+    get the success of the previously run ddg job.'''
+    # Hacky way of getting the chain name from the cst_min pdb output name:
     name = ddg_file.split('/')[-1][12:-9]
     folder = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
     ddg_outfile = folder + '/' + 'ddg_predictions.out'
@@ -268,6 +262,7 @@ def ddg_success(ddg_file):
         shutil.rmtree(folder)
         return(1)
     elif os.path.exists(ddg_outfile):  # The job has either fininshed succesfully or somthing went wrong
+        # Glob to find error and out logs:
         out_log_glob_string = folder + '/' + 'sub*_log.out'
         out_log_glob = glob.glob(out_log_glob_string)
         err_log_glob_string = folder + '/' + 'sub*_log.err'
@@ -285,7 +280,7 @@ def ddg_success(ddg_file):
         else:  # Check if the logs indicate success
             out_log = out_log_glob[0]
             err_log = err_log_glob[0]
-
+        # Parse the error log:
         with open(err_log) as fh:
             lines = fh.readlines()
         if not lines:  # If the error log is empty
@@ -298,7 +293,7 @@ def ddg_success(ddg_file):
             if args.verbose:
                 print('Rosetta have thrown an error an aborted:\n', folder)
             return(2)
-
+        # Parse the out log:
         with open(out_log) as fh:
             lines = fh.readlines()
             # Apparently the ddg:monomer app ends with this on success:
@@ -325,6 +320,7 @@ def ddg_success(ddg_file):
 # Code 5: The job ended with success
 ### Response: Nothing (False)
 def ddg_choice(ddg_response, pdb_file_path, idx, folders_for_ddg2):
+    '''Determine what to do following the return code of the ddg success.'''
     if ddg_response == 1:
         submit_ddg(pdb_file_path, idx)
         folders_for_ddg2.append(pdb_file_path)
@@ -348,6 +344,7 @@ def ddg_choice(ddg_response, pdb_file_path, idx, folders_for_ddg2):
 # start
 # 1 - last_res - 1 A NATAA
 def prep_restart_job(folder, name):
+    '''Pepare for resubmission of an early terminated job.'''
     # Glob to find the submission logs:
     out_log_glob_string = folder + '/' + 'sub*_log.out'
     out_log_glob = glob.glob(out_log_glob_string)
@@ -358,7 +355,7 @@ def prep_restart_job(folder, name):
     # Remove the submission logs:
     os.remove(out_log)
     os.remove(err_log)
-
+    # If monomer the chain name is intacts, if dimer the chain name is renamed to A:
     if len(name) == 1:
         chain_name = name
     else:
@@ -371,7 +368,7 @@ def prep_restart_job(folder, name):
             cols = line.split()
             if len(cols) < 1:  # Empty lines
                 pass
-            elif cols[1] == 'description':  # Then it is a header
+            elif cols[1] == 'description':  # Header line
                 pass
             else:
                 resnumb = int(cols[1][1:-1])
@@ -382,10 +379,13 @@ def prep_restart_job(folder, name):
     resfile = folder + '/' + 'resfile.txt'
     with open(resfile, 'w') as fh_out:
         print('ALLAA\nstart', file=fh_out)
+        # Make the resfile start at the second last residue (last_res - 1):
         print('1 - {} {} NATAA'.format(last_res - 1, chain_name), file=fh_out)
 
 
 def cst_min_success(folder):
+    '''Investigate whether the cst_min run was a success or not.'''
+    # Glob to find the out log:
     out_log_glob_string = folder + '/' + 'sub*_log.out'
     out_log_glob = glob.glob(out_log_glob_string)
     if len(out_log_glob) > 1:
@@ -396,6 +396,7 @@ def cst_min_success(folder):
         return(False)
     else:
         out_log = out_log_glob[0]
+    # Parse the log:
     with open(out_log) as fh:
         lines = fh.readlines()
         # Apparently the cst_min app ends with this on success:
@@ -407,26 +408,24 @@ def cst_min_success(folder):
         return(False)
 
 
-
-# folders_for_ddg = args.db_home_dir + '/' + 'folders_for_ddg.txt'
-#folders_for_ddg = db_home_dir + '/' + 'folders_for_ddg2.txt'
-# Or do glob to find all the folders:
-# glob.glob("/home/projects/cu_10020/data/precalculated_ddg/split/*/*/")
-
 if __name__ == "__main__":
+    # Either check all folders or a list provided:
     if not args.check_all_folders:
         with open(args.folders_for_ddg) as fh:
             folder_list = fh.read().splitlines()
     else:
+        # If all folders should be checked then glob is used:
         folder_list_glob = args.db_split_dir + '/*/*/'
         folder_list = glob.glob(folder_list_glob)
         folder_list = [f.rstrip('/') for f in folder_list]
 
-    job_idx = 0
-    folders_for_ddg2 = list()
+    job_idx = 0  # Index for the log, not strictly necessary
+    folders_for_ddg2 = list()  # Folders that are still not finished
     for idx, folder in enumerate(folder_list):
+        # If the cst_min failed skip it:
         if not cst_min_success(folder):
             continue
+        # Find the cst_min structures:
         ddg_file_glob = folder + '/' + '*.pdb'
         files_for_ddg = glob.glob(ddg_file_glob)
         for ddg_file in files_for_ddg:
@@ -438,19 +437,3 @@ if __name__ == "__main__":
     folders_for_ddg2 = list({'/'.join(f.split('/')[:-1]): 1 for f in folders_for_ddg2}.keys())
     with open(args.folders_for_ddg, 'w') as fh_out:
         print('\n'.join(folders_for_ddg2), file=fh_out)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
