@@ -300,29 +300,31 @@ def cst_min_success(folder):
 
 def write_ddG_results(folder, ddG_dict):
     resname = folder + '/ddG_results.txt'
-    with open(resname, 'w') as fh_out:
+    print(resname)
+    with open(resname, 'a') as fh_out:
         for name, res_list in sorted(ddG_dict.items()):
             if len(name) == 1:
                 print('# Monomeric stability for chain', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
-                tab_list = ['\t'.join(t[1:3]) for t in res_list]
+                tab_list = ['\t'.join(t[0:]) for t in res_list]
                 print('\n'.join(tab_list), file=fh_out)
             elif len(name) == 2:
                 print('# Complex stability for chain complex', name, file=fh_out)
                 print('# ChainID Residue_number InsertionCode\tFromTo\tREU', file=fh_out)
-                tab_list = ['\t'.join(t[1:3]) for t in res_list]
+                tab_list = ['\t'.join(t[0:]) for t in res_list]
                 print('\n'.join(tab_list), file=fh_out)
 
 
 def check_mapping(mapping_dict):
+    ### Shorten the keys:
     # From 'PRO A   1 '
-    # To 'PRO A   1 '
+    # To '   1 '
     new_mapping = dict()
     for k, v in mapping_dict.items():
-        if k[0:3] != v[0:3]:
+        if k[0:4] != v[0:4]:
             print(k, v)
             sys.exit()
-        new_mapping[k[3:]] = v[3:]
+        new_mapping[k[5:]] = v[4:]
     return(new_mapping)
 
 
@@ -331,14 +333,17 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
     ddg_rundir = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'
     ddg_outfile = ddg_rundir + '/' + 'ddg_predictions.out'
     ori_AAseq = get_AA_string(ddg_rundir, name)
-    mapping_dict = check_mapping(mapping_dict)
+    print(name, ori_AAseq)
+    print()
+    chain_map = check_mapping(mapping_dict[name])
     # Create a new dict for the chain:
     ddG_dict[name] = list()
     offset = 0
+    res_count = 0
     with open(ddg_outfile) as fh:
         lines = fh.readlines()
         for line in lines:
-            if offset > 20:
+            if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
                 print("Offset is very high. Many residues have been skipped. Terminating:", ddg_outfile)
                 sys.exit()
             line = line.strip()
@@ -347,14 +352,24 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
             elif line.startswith('ddG: description'):
                 continue
             rows = line.split()
-            AA = rows[1][1]
+            AA = rows[1][0]
             res_count = int(rows[1][1:-1])
             # Check for skipped residue:
-            while ori_AAseq[res_count - 1 + offset] != AA or offset > 20:
+            # while (res_count - 1 + offset) < len(ori_AAseq) or offset < 20:
+            ori_AA = ori_AAseq[res_count - 1 + offset]
+            while ori_AA != AA:
+                print(res_count)
+                print('obs:', AA)
+                print('ori', ori_AAseq[res_count - 1 + offset])
+                print()
                 offset += 1
-            res_idx_string = 'A{:>4} '.format(res_count + offset)  # Notice chain A and the blank insertion code
-            ori_res_idx_string = mapping_dict[res_idx_string]
-            from_to = rows[1][1] + '->' + rows[1][-1]
+                if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
+                    break
+                elif ori_AAseq[res_count - 1 + offset] == AA:
+                    break
+            res_idx_string = '{:>4} '.format(res_count + offset)  # Notice the blank insertion code
+            ori_res_idx_string = chain_map[res_idx_string]
+            from_to = rows[1][0] + '->' + rows[1][-1]
             res_tuple = (ori_res_idx_string, from_to, rows[2])
             ddG_dict[name].append(res_tuple)
     return(ddG_dict)
@@ -369,8 +384,9 @@ def get_AA_string(ddg_rundir, name):
         for line in lines:
             if not line.startswith('ATOM'):
                 continue
-            resnumb = line[22:26]
+            resnumb = line[22:27]
             if resnumb != prev_resnumb:
+                prev_resnumb = resnumb
                 res_name = line[17:20]
                 AA = residue_type_3to1_map[res_name]
                 AA_string += AA
@@ -394,6 +410,9 @@ if __name__ == "__main__":
         ddg_file_glob = folder + '/' + '*.pdb'
         files_for_ddg = glob.glob(ddg_file_glob)
         ddG_dict = dict()
+        resname = folder + '/ddG_results.txt'
+        if os.path.isfile(resname):
+            os.remove(resname)
         for ddg_file in files_for_ddg:
             ddg_response = ddg_success(ddg_file)
             if not ddg_choice(ddg_response):
