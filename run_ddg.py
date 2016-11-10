@@ -172,7 +172,7 @@ def pbs_submit_cmd(np, cmd_flags, run_dir, idx):
     qsub_string = '#!/bin/sh\n\
 ### Note: No commands may be executed until after the #PBS lines\n\
 ### Account information\n\
-#PBS -W group_list=cu_10020 -A cu_10020\n\
+#PBS -W group_list=pr_46690 -A pr_46690\n\
 ### Job name (comment out the next line to get the name of the script used as the job name)\n\
 #PBS -N krdav_job\n\
 ### Output files (comment outa the next 2 lines to get the job name used instead)\n' + '#PBS -e ' + log_err + '\n' + '#PBS -o ' + log_out + '\n' + '### Email: no (n)\n\
