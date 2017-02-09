@@ -5,6 +5,10 @@ import shutil
 import pickle
 import multiprocessing
 import argparse
+import numpy as np
+import statistics
+import json
+import copy
 
 # Build commandline parser
 parser = argparse.ArgumentParser(description="Collect the results from the Rosetta ddg_monomer app.")
@@ -37,7 +41,7 @@ parser.add_argument(
 parser.add_argument(
     "-a",
     "--check_all_folders",
-    type=str,
+    type=int,
     dest="check_all_folders",
     metavar="SWITCH",
     help="Should all the created folders in the database be cheched for ddG calculations?",
@@ -250,11 +254,17 @@ def cst_min_success(folder):
         return(False)
 
 
-def write_ddG_results(folder, ddG_dict):
+def write_ddG_results(folder, ddG_dict, ddG_dict_json, prot_name):
     '''Write all the results in ddG_dict to a file in the main folder for the given protein.'''
+    ddG_dict_json = {prot_name: ddG_dict_json}
     resname = folder + '/ddG_results.txt'  # Name of the results file
-    print(resname)
-    with open(resname, 'a') as fh_out:
+    resname_json = folder + '/ddG_results.json'  # Name of the results file
+    resname_pickle = folder + '/ddG_results.p'  # Name of the results file
+    pickle.dump(ddG_dict_json, open(resname_pickle, "wb"))
+    with open(resname_json, 'w') as outfile:
+        json.dump(ddG_dict_json, outfile, sort_keys=True, indent=4)
+    with open(resname, 'w') as fh_out:
+        print('# ddG data for:', prot_name, file=fh_out)
         # Sort first according to the alphabet then according to length of the name.
         # Effectively printing the monomeric results first and the dimeric second.
         for name in sorted(sorted(ddG_dict), key=len):
@@ -289,7 +299,7 @@ def check_mapping(mapping_dict):
     return(new_mapping)
 
 
-def collect_ddg(ddg_file, mapping_dict, ddG_dict):
+def collect_ddg(ddg_file, mapping_dict, ddG_dict, ddG_dict_json):
     '''Collect the ddG results for a protein and write the results into a file,
      mapping the ddG values back to the original protein residue numbering.'''
     # Hacky way of getting the chain name from the cst_min pdb output name:
@@ -298,12 +308,13 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
     ddg_outfile = ddg_rundir + '/' + 'ddg_predictions.out'  # Prediction results from the ddg_monomer application
     # Get the original AA seq to test if any residues have been skipped by the ddg_monomer application:
     ori_AAseq = get_AA_string(ddg_rundir, name)
-    print(name, ori_AAseq)
-    print()
+    # print(name, ori_AAseq)
+    # print()
     # Correct the mapping dictionary to reflect usage of dextro -and modified residues:
     chain_map = check_mapping(mapping_dict[name])
     # Create a new list for the chain:
     ddG_dict[name] = list()
+    ddG_dict_json[name] = dict()
     offset = 0     # Offset if ddg_monomer have skipped some residues
     res_count = 0  # Residue count according to the ddg_prediction.txt
     del_flag = 0   # Flag the chains where mapping fails
@@ -316,7 +327,7 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
             elif line.startswith('ddG: description'):
                 continue
             # Max number of skipped residues:
-            if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
+            if offset > 10 or (res_count - 1 + offset) > len(ori_AAseq):
                 print("Offset is very high. Many residues have been skipped. Terminating:", ddg_outfile)
                 del_flag = 1
                 break
@@ -334,11 +345,13 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
                 print()
                 offset += 1
                 # Break either if the offset gets to high or the matching amino acid is found:
-                if offset > 20 or (res_count - 1 + offset) > len(ori_AAseq):
+                if offset > 10 or (res_count - 1 + offset) >= len(ori_AAseq):
                     del_flag = 1
                     break
                 elif ori_AAseq[res_count - 1 + offset] == AA:
                     break
+            if del_flag:
+                break
             # Create the new residue mapping:
             res_idx_string = '{:>4} '.format(res_count + offset)  # Notice the blank insertion code
             # Look-up the original residue mapping:
@@ -348,10 +361,25 @@ def collect_ddg(ddg_file, mapping_dict, ddG_dict):
             # Put this into a tuple with the ddG value and append it the results dictionary:
             res_tuple = (ori_res_idx_string, from_to, cols[2])
             ddG_dict[name].append(res_tuple)
+
+            chain_name = ori_res_idx_string[0]
+            resn = AA + ori_res_idx_string[1:].strip()
+            if chain_name not in ddG_dict_json[name]:
+                ddG_dict_json[name][chain_name] = dict()
+            if resn not in ddG_dict_json[name][chain_name]:
+                ddG_dict_json[name][chain_name][resn] = dict()
+            # Special case for e.g. the histidine tautomer:
+            if AA_mut in ddG_dict_json[name][chain_name][resn] and\
+               ddG_dict_json[name][chain_name][resn][AA_mut] < float(cols[2]):
+                pass
+            else:
+                ddG_dict_json[name][chain_name][resn][AA_mut] = float(cols[2])
+
         # If faulty run, delete the chain:
         if del_flag:
             del ddG_dict[name]
-    return(ddG_dict)
+            del ddG_dict_json[name]
+    return(ddG_dict, ddG_dict_json)
 
 
 def get_AA_string(ddg_rundir, name):
@@ -374,10 +402,46 @@ def get_AA_string(ddg_rundir, name):
     return(AA_string)
 
 
+def median(lst):
+    return(np.median(np.array(lst)))
+
+
+def collect_REU(ddg_file, ddG_dict, ddG_dict_json):
+    name = ddg_file.split('/')[-1][12:-9]  # Chain name
+    if name not in ddG_dict or name not in ddG_dict_json:
+        return(ddG_dict, ddG_dict_json)
+
+    ddg_rundir = '/'.join(ddg_file.split('/')[0:-1]) + '/' + name + '_ddg_rundir'  # Chain rundir
+    # Glob to find the output log:
+    ddg_log_glob = ddg_rundir + '/' + '*_log.out'
+    ddg_logfile = glob.glob(ddg_log_glob)
+    # There can only be one log:
+    assert(len(ddg_logfile) == 1)
+    ddg_logfile = ddg_logfile[0]
+    energy_list = list()
+    # Now read the log file:
+    with open(ddg_logfile) as fh:
+        lines = fh.readlines()
+        for line in lines:
+            line = line.strip()
+            if line.startswith('Total weighted score:'):
+                REU = line.split()[-1]
+                REU = float(REU)
+                energy_list.append(REU)
+
+    median_REU = statistics.median_grouped(energy_list)
+    res_tuple = ('Total_energy', 'X->X', str(median_REU))
+    ddG_dict[name].append(res_tuple)
+    ddG_dict_json[name]['energy_total'] = median_REU
+    return(ddG_dict, ddG_dict_json)
+
+
 def run_parallel(folder):
     # If the cst_min failed then return:
     if not cst_min_success(folder):
         return(False)
+
+    prot_name = folder.split('/')[-1]
     # Use the residue mapping created by the run_cst app:
     mapping_path = folder + '/' + 'residue_mapping_dict.p'
     mapping_dict = pickle.load(open(mapping_path, "rb"))
@@ -390,15 +454,31 @@ def run_parallel(folder):
         os.remove(resname)
     # Run through all the monomers/dimers and fill up the ddG_dict:
     ddG_dict = dict()
+    ddG_dict_json = dict()
     for ddg_file in files_for_ddg:
         # Check if the ddG run was succesfull and if not skip this chain:
         ddg_response = ddg_success(ddg_file)
-        if not ddg_choice(ddg_response):
+        if ddg_choice(ddg_response) is False:
             continue
         # Add the results to the ddG_dict:
-        ddG_dict = collect_ddg(ddg_file, mapping_dict, ddG_dict)
+        ddG_dict, ddG_dict_json = collect_ddg(ddg_file, mapping_dict, ddG_dict, ddG_dict_json)
+        # Add the total REU of each protein monomer and dimer:
+        ddG_dict, ddG_dict_json = collect_REU(ddg_file, ddG_dict, ddG_dict_json)
     # Finally write the result to a file in the protein folder:
-    write_ddG_results(folder, ddG_dict)
+    write_ddG_results(folder, ddG_dict, ddG_dict_json, prot_name)
+
+
+def merge_results(folder_list):
+    master_dict = dict()
+    for folder in folder_list:
+        resname_pickle = folder + '/ddG_results.p'  # Name of the results file
+        if not os.path.isfile(resname_pickle):
+            continue
+        ddG_dict_json = pickle.load(open(resname_pickle, "rb"))
+        master_dict.update(ddG_dict_json)
+    all_resfile = run_dir + '/all_results.json'
+    with open(all_resfile, 'w') as outfile:
+        json.dump(master_dict, outfile, sort_keys=True, indent=4)
 
 
 if __name__ == "__main__":
@@ -415,3 +495,4 @@ if __name__ == "__main__":
     # Paralellize the process:
     pool = multiprocessing.Pool(28)
     output = pool.map(run_parallel, folder_list)
+    merge_results(folder_list)
