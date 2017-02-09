@@ -1,0 +1,75 @@
+
+# Scheme:
+<pdb_id>: {
+    <chain_name>: {
+        energy_total: <float>
+        <chain_name>: {
+            <resid_resnum_insertioncode>: {
+                <resid>: <float>
+                <resid>: <float>,
+                .
+                .
+                <resid>: <float>
+            }
+        }
+    }
+    <chain_name1chain_name2>: {
+        energy_total: <float>
+        <chain_name1>: {
+            <resnum_resid_insertioncode>: {
+                <resid>: <float>
+                <resid>: <float>,
+                .
+                .
+                <resid>: <float>
+            }
+        }
+        <chain_name2>: {
+            <resnum_resid_insertioncode>: {
+                <resid>: <float>
+                <resid>: <float>,
+                .
+                .
+                <resid>: <float>
+            }
+        }
+    }
+}
+
+
+# Example:
+1xy2: {
+    A: {
+        energy_total: -1456.98
+        A: {
+            1WI: {
+                A: 0.90
+                C 2.55,
+                .
+                .
+                W: 0.00
+            }
+        }
+    }
+    AB: {
+        energy_total: 3207.22
+        A: {
+            1W: {
+                A: 0.90
+                C 2.55,
+                .
+                .
+                W: 0.00
+            }
+        }
+        B: {
+            1M: {
+                A: 0.60
+                C 0.05,
+                .
+                .
+                W: 3.11
+            }
+        }
+    }
+}

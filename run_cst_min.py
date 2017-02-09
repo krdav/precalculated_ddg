@@ -186,9 +186,9 @@ def QC_prot_check(prot_path):
                 except:
                     pass
             # Exlude amino acids on the blacklist:
-            elif line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM':
-                canonical = 0
-                break
+#            elif (line[0:6] == 'ATOM  ' or line[0:6] == 'HETATM') and line[17:20] in blacklist:
+#                canonical = 0
+#                break
         # A PDB ID is kept if both xray and resolution flags checks out:
         keep = xray * resolution * canonical  # All switches must be on to keep
     return(keep)
